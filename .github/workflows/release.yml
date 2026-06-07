@@ -1,0 +1,28 @@
+name: Package and release
+
+# Runs whenever you push a version tag (e.g. v1.0.0).
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write # needed to create the GitHub Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so the changelog can be generated
+
+      - name: Package and release
+        uses: BigWigsMods/packager@v2
+        env:
+          # Auto-provided by GitHub: lets the packager create the Release.
+          GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
+          # Optional: set this repo secret to also publish to CurseForge.
+          # Requires "## X-Curse-Project-ID:" in the .toc file.
+          CF_API_KEY: ${{ secrets.CF_API_KEY }}

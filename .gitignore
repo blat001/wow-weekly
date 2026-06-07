@@ -1,0 +1,13 @@
+# Tooling / editor
+.claude/
+*.bak
+*.tmp
+*.swp
+
+# OS cruft
+Thumbs.db
+.DS_Store
+
+# Local build output
+.release/
+dist/

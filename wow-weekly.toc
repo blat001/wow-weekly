@@ -1,0 +1,33 @@
+## Interface: 120005
+## Title: WoW Weekly Tracker
+## Notes: Track completion of weekly tasks (Delves, Keyshards, Professions) across main + alts
+## Author: Barry Latimer
+## Version: 1.0.0
+## SavedVariables: WoWWeeklyDB
+## OptionalDeps: Titan, !LibUIDropDownMenu
+# To enable auto-publishing to CurseForge, uncomment the next line and put your real project ID:
+# ## X-Curse-Project-ID: 000000
+
+embeds.xml
+Constants.lua
+Core.lua
+Database.lua
+WeeklyReset.lua
+TrackerRegistry.lua
+Trackers\Delves.lua
+Trackers\BountyMap.lua
+Trackers\CofferKeys.lua
+Trackers\CofferKeyShards.lua
+Trackers\GildedStash.lua
+Trackers\MetaQuest.lua
+Trackers\Timewalking.lua
+Trackers\RitualSites.lua
+Trackers\Prey.lua
+Trackers\WeeklyProfession.lua
+Trackers\ReadyToCraft.lua
+Trackers\MythicPlus.lua
+Trackers\Keystone.lua
+Trackers\Raid.lua
+UI\Broker.lua
+UI\Tooltip.lua
+UI\Config.lua

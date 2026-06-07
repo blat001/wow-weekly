@@ -1,0 +1,17 @@
+# BigWigs Packager config. Controls what ends up in the packaged .zip
+# that gets attached to the GitHub Release and uploaded to CurseForge.
+package-as: wow-weekly
+
+# We vendor all libraries in Libs/, so no externals are fetched.
+enable-nolib-creation: no
+
+# Dev-only files that should NOT ship inside the addon zip.
+ignore:
+  - CLAUDE.md
+  - CURSEFORGE.md
+  - SETUP.md
+  - README.md
+  - "ui example.md"
+  - docs
+  - .claude
+  - "*.png"
