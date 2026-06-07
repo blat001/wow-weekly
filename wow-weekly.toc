@@ -5,8 +5,7 @@
 ## Version: 1.0.0
 ## SavedVariables: WoWWeeklyDB
 ## OptionalDeps: Titan, !LibUIDropDownMenu
-# To enable auto-publishing to CurseForge, uncomment the next line and put your real project ID:
-# ## X-Curse-Project-ID: 000000
+## X-Curse-Project-ID: 1567214
 
 embeds.xml
 Constants.lua
