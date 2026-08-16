@@ -99,18 +99,15 @@ end
 
 function T:GetSummary(charState)
 	local st = charState.trackers[self.id] or {}
-	-- Done via a hidden credit quest (objective unknown): plain green "Done".
-	if st.generic and st.done then
-		return Constants.COLOR_GREEN .. "Done" .. Constants.COLOR_RESET
+	if st.done then
+		return Constants.CHECK_GREEN
 	end
 	local text = describe(st)
 	if not text then
-		return Constants.COLOR_RED .. "Not Done" .. Constants.COLOR_RESET
+		return Constants.COLOR_GRAY .. "-" .. Constants.COLOR_RESET
 	end
 	local color
-	if st.done then
-		color = Constants.COLOR_GREEN
-	elseif (st.cur or 0) > 0 then
+	if (st.cur or 0) > 0 then
 		color = Constants.COLOR_YELLOW
 	else
 		color = Constants.COLOR_RED

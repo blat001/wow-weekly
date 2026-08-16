@@ -51,13 +51,18 @@ local function MakeProfessionTracker(slot, trackerId, label, order)
 		local profIndices = { GetProfessions() }  -- prof1, prof2, archaeology, fishing, cooking
 		local idx = profIndices[self.slot]
 		if idx then
-			local name, _, _, _, _, _, skillLine = GetProfessionInfo(idx)
+			local name, _, skillLevel, maxSkillLevel, _, _, skillLine = GetProfessionInfo(idx)
 			data.hasProf = true
 			data.name = name
+			data.skillLevel = skillLevel or 0
+			data.maxSkillLevel = maxSkillLevel or 0
 			data.weeklyDone   = anyDone(skillLine and Constants.PROFESSION_WEEKLY_QUESTS[skillLine])
 			data.treatiseDone = anyDone(skillLine and Constants.PROFESSION_TREATISE_QUESTS[skillLine])
 		end
 		charState.trackers[self.id] = data
+		if data.weeklyDone == true or data.treatiseDone == true then
+			Constants.RecordActivity(charState, "professions")
+		end
 	end
 
 	function T:GetSummary(charState)
@@ -73,11 +78,24 @@ local function MakeProfessionTracker(slot, trackerId, label, order)
 			.. statusLine("Treatise", st.treatiseDone)
 	end
 
+	-- Weekly sweep: the character's professions are still known after a reset -
+	-- only the quest completion goes back to "not done". Keep hasProf/name;
+	-- flip the done flags, preserving nil (= this profession has no tracked
+	-- quest, shown as a gray dot).
+	function T:OnWeeklyReset(charState)
+		local st = charState.trackers[self.id]
+		if not st then return end
+		if st.weeklyDone ~= nil then st.weeklyDone = false end
+		if st.treatiseDone ~= nil then st.treatiseDone = false end
+	end
+
 	-- Relevant to the recommender if the character has this profession and we
 	-- track at least one of its knowledge sources.
 	function T:IsRelevant(charState)
 		local st = charState.trackers[self.id] or {}
-		return st.hasProf == true and (st.weeklyDone ~= nil or st.treatiseDone ~= nil)
+		return st.hasProf == true and (st.skillLevel or 0) >= 25
+			and Constants.GetActivityAffinity(charState, "professions") >= 0.5
+			and (st.weeklyDone ~= nil or st.treatiseDone ~= nil)
 	end
 
 	function T:IsComplete(charState)

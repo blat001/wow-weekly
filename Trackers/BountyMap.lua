@@ -17,7 +17,36 @@ local T = {
 local function ItemCount(itemID)
 	if not itemID or itemID <= 0 then return 0 end
 	local fn = (C_Item and C_Item.GetItemCount) or GetItemCount
-	return (fn and fn(itemID)) or 0
+	-- Include bank, reagent bank, and account bank so a stored map is not
+	-- mistaken for one that was consumed.
+	if not fn then return 0 end
+	local ok, count = pcall(fn, itemID, true, false, true, true)
+	return ok and count or 0
+end
+
+local function HasBountyMap()
+	local known = {}
+	for _, itemID in ipairs(Constants.ITEM_BOUNTY_MAPS or { Constants.ITEM_BOUNTY_MAP }) do
+		known[itemID] = true
+		if ItemCount(itemID) > 0 then return true end
+	end
+
+	-- Fall back to the actual bag contents. This protects the tracker when
+	-- Blizzard introduces another seasonal item ID before databases catch up.
+	if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo) then
+		return false
+	end
+	for bag = 0, 5 do
+		for slot = 1, C_Container.GetContainerNumSlots(bag) do
+			local info = C_Container.GetContainerItemInfo(bag, slot)
+			if info then
+				if known[info.itemID] then return true end
+				local link = info.hyperlink and string.lower(info.hyperlink)
+				if link and string.find(link, "trovehunter's bounty", 1, true) then return true end
+			end
+		end
+	end
+	return false
 end
 
 function T:Scan(charState)
@@ -27,7 +56,7 @@ function T:Scan(charState)
 	--   Used       = looted this week (quest done) but no longer in bags
 	--   Not Looted = no map and not looted this week
 	local state
-	if ItemCount(Constants.ITEM_BOUNTY_MAP) > 0 then
+	if HasBountyMap() then
 		state = "inbags"
 	elseif Constants.QUEST_BOUNTY_LOOTED > 0
 		and C_QuestLog.IsQuestFlaggedCompleted(Constants.QUEST_BOUNTY_LOOTED) then
@@ -41,11 +70,11 @@ end
 function T:GetSummary(charState)
 	local s = (charState.trackers[self.id] or {}).state
 	if s == "used" then
-		return Constants.COLOR_GREEN .. "Used" .. Constants.COLOR_RESET
+		return Constants.CHECK_GREEN
 	elseif s == "inbags" then
 		return Constants.COLOR_YELLOW .. "In Bags" .. Constants.COLOR_RESET
 	end
-	return Constants.COLOR_RED .. "Not Looted" .. Constants.COLOR_RESET
+	return Constants.COLOR_GRAY .. "-" .. Constants.COLOR_RESET
 end
 
 function T:IsComplete(charState)
@@ -55,8 +84,8 @@ end
 
 function T:GetAction(charState)
 	local s = (charState.trackers[self.id] or {}).state
-	if s == "inbags" then return "Use bounty map" end
-	return "Bounty map"
+	if s == "inbags" then return "Use your Bounty Map in a Tier 8+ Delve for Hero gear" end
+	return "Complete Purging the Vaults for a Bounty Map"
 end
 
 _G[ADDON_NAME .. "BountyMapTracker"] = T

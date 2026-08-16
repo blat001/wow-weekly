@@ -395,10 +395,17 @@ end
 function WoWWeekly:RegisterEvents()
 	self:RegisterEvent("PLAYER_LOGIN", "OnPlayerLogin")
 	self:RegisterEvent("PLAYER_LOGOUT", "OnPlayerLogout")
+	self:RegisterEvent("TIME_PLAYED_MSG", "OnTimePlayed")
 end
 
 function WoWWeekly:OnPlayerLogin()
 	self:Print("Player logged in: " .. UnitName("player"))
+	-- Sweep stale weeks before scanning so the fresh scan isn't mixed with
+	-- last week's leftovers (GetSecondsUntilWeeklyReset is reliable by now).
+	local WeeklyReset = _G[ADDON_NAME .. "WeeklyReset"]
+	if WeeklyReset and WeeklyReset.CheckAndApplyWeeklyReset then
+		WeeklyReset:CheckAndApplyWeeklyReset()
+	end
 	local TrackerRegistry = _G[ADDON_NAME .. "TrackerRegistry"]
 	if TrackerRegistry and TrackerRegistry.ScanAll then
 		TrackerRegistry:ScanAll()
@@ -407,6 +414,20 @@ function WoWWeekly:OnPlayerLogin()
 	if Broker and Broker.UpdateText then
 		Broker:UpdateText()
 	end
+	if RequestTimePlayed then RequestTimePlayed() end
+end
+
+function WoWWeekly:OnTimePlayed(event, totalTime, levelTime)
+	local Database = _G[ADDON_NAME .. "Database"]
+	local charState = Database and Database:GetCharState()
+	if not charState or not totalTime then return end
+	if charState.playedSeason ~= Constants.MIDNIGHT_SEASON_KEY
+		or not charState.seasonPlayedBaseline then
+		charState.playedSeason = Constants.MIDNIGHT_SEASON_KEY
+		charState.seasonPlayedBaseline = totalTime
+	end
+	charState.totalPlayed = totalTime
+	charState.seasonPlayed = math.max(0, totalTime - charState.seasonPlayedBaseline)
 end
 
 function WoWWeekly:OnPlayerLogout()

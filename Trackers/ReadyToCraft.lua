@@ -1,4 +1,5 @@
 local ADDON_NAME = "WoWWeekly"
+local WoWWeekly = _G[ADDON_NAME]
 local Constants = _G[ADDON_NAME .. "Constants"]
 
 local T = {
@@ -8,34 +9,46 @@ local T = {
 	category = "weekly",
 	group = "professions",
 	order = 5,
-	cadence = "weekly",
+	-- Crest balances carry across the weekly reset; the reset sweep must not
+	-- clear this state for characters that haven't logged in.
+	cadence = "persistent",
 	events = { "PLAYER_LOGIN", "CURRENCY_DISPLAY_UPDATE" },
 	enabledByDefault = true,
 }
 
 function T:Scan(charState)
-	local q = 0
-	local id = Constants.CURRENCY_MYTH_CREST
-	if id and id > 0 then
+	local function CurrencyCount(id)
+		if not id or id <= 0 then return 0 end
 		local info = C_CurrencyInfo.GetCurrencyInfo(id)
-		q = info and info.quantity or 0
+		return info and info.quantity or 0
 	end
-	charState.trackers[self.id] = { crests = q, lastUpdated = time() }
+	charState.trackers[self.id] = {
+		heroCrests = CurrencyCount(Constants.CURRENCY_HERO_CREST),
+		mythCrests = CurrencyCount(Constants.CURRENCY_MYTH_CREST),
+		lastUpdated = time(),
+	}
+end
+
+local function SelectedCrests(st)
+	local po = WoWWeekly.db and WoWWeekly.db.profileOptions
+	local crestType = po and po.readyCraftCrest or "myth"
+	if crestType == "hero" then return st.heroCrests or 0 end
+	return st.mythCrests or 0
 end
 
 function T:GetSummary(charState)
 	local st = charState.trackers[self.id] or {}
-	local crests = st.crests or 0
-	local ready = crests >= Constants.MYTH_CREST_CRAFT_THRESHOLD
+	local crests = SelectedCrests(st)
+	local ready = crests >= Constants.CREST_CRAFT_THRESHOLD
 	if ready then
-		return Constants.COLOR_GREEN.."Yes"..Constants.COLOR_RESET
+		return Constants.CHECK_GREEN
 	end
-	return Constants.COLOR_RED.."No ("..crests..")"..Constants.COLOR_RESET
+	return Constants.COLOR_GRAY.."("..crests..")"..Constants.COLOR_RESET
 end
 
 function T:IsComplete(charState)
 	local st = charState.trackers[self.id] or {}
-	return (st.crests or 0) >= Constants.MYTH_CREST_CRAFT_THRESHOLD
+	return SelectedCrests(st) >= Constants.CREST_CRAFT_THRESHOLD
 end
 
 _G[ADDON_NAME .. "ReadyToCraftTracker"] = T

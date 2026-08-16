@@ -34,7 +34,7 @@ function T:GetSummary(charState)
 	local earned = st.earned or 0
 	local cap = st.cap or Constants.COFFER_SHARD_WEEKLY_CAP
 	if cap > 0 and earned >= cap then
-		return Constants.COLOR_GREEN .. "Done" .. Constants.COLOR_RESET
+		return Constants.CHECK_GREEN
 	end
 	return string.format("%s%d/%d%s", Constants.COLOR_YELLOW, earned, cap, Constants.COLOR_RESET)
 end

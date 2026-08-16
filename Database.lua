@@ -38,6 +38,8 @@ function Database:RegisterCharacter()
 			lastSeen = time(),
 			resetPeriodId = 0,
 			trackers = {},
+			activityProfile = {},
+			seasonPlayed = 0,
 		}
 		WoWWeekly:Print("Registered character: " .. charKey)
 	else

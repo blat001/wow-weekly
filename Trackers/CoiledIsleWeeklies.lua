@@ -29,7 +29,7 @@ local function CreateQuestTracker(id, label, questID, order)
 	function T:GetSummary(charState)
 		local done = (charState.trackers[self.id] or {}).done == true
 		if done then
-			return Constants.COLOR_GREEN .. "Done" .. Constants.COLOR_RESET
+			return Constants.CHECK_GREEN
 		end
 		return Constants.COLOR_GRAY .. "\226\128\148" .. Constants.COLOR_RESET
 	end
@@ -47,9 +47,9 @@ end
 
 local trackers = {
 	CreateQuestTracker(Constants.TRACKER_TURNBACKSURGE, "Turn Back the Surge",
-		Constants.QUEST_TURN_BACK_SURGE, 2),
+		Constants.QUEST_TURN_BACK_SURGE, 1),
 	CreateQuestTracker(Constants.TRACKER_PURGINGVAULTS, "Purging the Vaults",
-		Constants.QUEST_PURGING_VAULTS, 3),
+		Constants.QUEST_PURGING_VAULTS, 2),
 }
 
 for _, tracker in ipairs(trackers) do

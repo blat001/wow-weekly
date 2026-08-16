@@ -8,7 +8,9 @@ local T = {
 	category = "weekly",
 	group = "delves",
 	order = 2,
-	cadence = "weekly",
+	-- Banked keys/shards carry across the weekly reset; the reset sweep must
+	-- not clear this state for characters that haven't logged in.
+	cadence = "persistent",
 	events = { "PLAYER_LOGIN", "CURRENCY_DISPLAY_UPDATE" },
 	enabledByDefault = true,
 }

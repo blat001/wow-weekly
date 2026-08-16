@@ -73,13 +73,13 @@ function T:GetSummary(charState)
 		return Constants.COLOR_GRAY .. EMDASH .. Constants.COLOR_RESET
 	end
 	if st.done then
-		return Constants.COLOR_GREEN .. "Done" .. Constants.COLOR_RESET
+		return Constants.CHECK_GREEN
 	end
 	if st.cur and st.max then
 		local color = st.cur > 0 and Constants.COLOR_YELLOW or Constants.COLOR_RED
 		return string.format("%s%d/%d%s", color, st.cur, st.max, Constants.COLOR_RESET)
 	end
-	return Constants.COLOR_RED .. "Not Done" .. Constants.COLOR_RESET
+	return Constants.COLOR_GRAY .. "-" .. Constants.COLOR_RESET
 end
 
 -- Only relevant on weeks a Timewalking event is running.

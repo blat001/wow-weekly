@@ -1,5 +1,5 @@
 local ADDON_NAME = "WoWWeekly"
-local ADDON_VERSION = "1.0.0"
+local ADDON_VERSION = "1.1.0"
 
 local Constants = {
 	ADDON_NAME = ADDON_NAME,
@@ -17,13 +17,11 @@ local Constants = {
 	TRACKER_PROFESSION2_TREATISE = "profession2treatise",
 	TRACKER_READYTOCRAFT = "readytocraft",
 	TRACKER_MYTHICPLUS = "mythicplus",
-	TRACKER_KEYSTONE = "keystone",
 	TRACKER_RAID = "raid",
 	TRACKER_PREY_NORMAL = "preynormal",
 	TRACKER_PREY_HARD = "preyhard",
 	TRACKER_PREY_NIGHTMARE = "preynightmare",
 	TRACKER_METAQUEST = "metaquest",
-	TRACKER_RITUALSITES = "ritualsites",
 	TRACKER_TURNBACKSURGE = "turnbacksurge",
 	TRACKER_PURGINGVAULTS = "purgingvaults",
 	TRACKER_TIMEWALKING = "timewalking",
@@ -43,6 +41,7 @@ local Constants = {
 	-- 15:00 UTC. During the preceding 12.1 pre-season week, Mythic+ and
 	-- Bountiful Delves are unavailable (Mythic 0 and ordinary Delves remain).
 	MIDNIGHT_SEASON_2_START = 1787065200,
+	MIDNIGHT_SEASON_KEY = "midnight-2",
 
 	-- Raid (Great Vault raid track). Slots unlock at 2/4/6 boss kills.
 	RAID_VAULT_MAX = 6,
@@ -63,8 +62,13 @@ local Constants = {
 	-- Currency IDs (CONFIRM IN-GAME with /ww find)
 	CURRENCY_RESTORED_COFFER_KEY = 3028,
 	CURRENCY_COFFER_KEY_SHARD = 3310,
-	CURRENCY_MYTH_CREST = 3347,
-	MYTH_CREST_CRAFT_THRESHOLD = 90,
+	-- Midnight Season 2 Mistcrests. Crafting Hero or Myth gear requires 80 of
+	-- the corresponding crest; the Ready to Craft row can be configured for
+	-- either track.
+	CURRENCY_HERO_CREST = 3445,
+	CURRENCY_MYTH_CREST = 3446,
+	CREST_CRAFT_THRESHOLD = 80,
+	MYTH_CREST_CRAFT_THRESHOLD = 80, -- compatibility alias
 
 	-- Coffer Key Shard weekly earn cap
 	COFFER_SHARD_WEEKLY_CAP = 600,
@@ -72,13 +76,12 @@ local Constants = {
 	-- Shards auto-combine into a Restored Coffer Key when you enter a delve
 	SHARDS_PER_KEY = 100,
 
-	-- Bounty Map. QUEST flags when you have LOOTED the bounty this week (per
-	-- DelveCompanion: "track whether player has looted Bounty Map during the
-	-- week"), NOT when it is used. ITEM is the bounty map itself, used to detect
-	-- the "In Bags" state. We infer "Used" = looted this week but no longer in
-	-- bags. Always check the item first so a map sitting in bags reads "In Bags".
+	-- Trovehunter's Bounty. The hidden weekly quest flags when the map has been
+	-- used. Always check the physical Season 2 item first so a map still sitting
+	-- in bags reads "In Bags" even if the quest flag is unexpectedly stale.
 	QUEST_BOUNTY_LOOTED = 86371,
-	ITEM_BOUNTY_MAP = 252415,  -- Trovehunter's Bounty (Midnight), from DelveCompanion
+	ITEM_BOUNTY_MAP = 265714,  -- Trovehunter's Bounty (Midnight Season 2)
+	ITEM_BOUNTY_MAPS = { 265714, 252415 }, -- Season 2 + legacy Season 1 item
 
 	-- Weekly profession knowledge quests (Midnight "mn-profession-weeklies" in
 	-- SavedInstances), keyed by the BASE profession skill-line ID returned by
@@ -202,15 +205,6 @@ local Constants = {
 		44166,  -- A Frozen Path Through Time (WotLK)  -- older, unconfirmed for 12.0
 	},
 
-	-- Coiled Isle weekly quest ("Midnight: Vaults of Atal'Utek"). Always
-	-- available, and exposes a completion PERCENTAGE we read via
-	-- C_QuestLog.GetQuestProgressBarPercent(). Coiled Isle activities feed the
-	-- SAME Great Vault World track as delves, so the tracker
-	-- shares the delve vault gear rule (VAULT_STOP_DELVE) and there is no
-	-- separate Coiled Isle vault row. Keep the old constant name as an alias for
-	-- compatibility with any external consumers.
-	QUEST_COILED_ISLE = 98232,
-	QUEST_RITUAL_SITES = 98232,
 	QUEST_TURN_BACK_SURGE = 96995,
 	QUEST_PURGING_VAULTS = 95520,
 
@@ -241,6 +235,7 @@ local Constants = {
 	DOT_YELLOW = "|TInterface\\COMMON\\Indicator-Yellow:14|t",
 	DOT_RED    = "|TInterface\\COMMON\\Indicator-Red:14|t",
 	DOT_GRAY   = "|TInterface\\COMMON\\Indicator-Gray:14|t",
+	CHECK_GREEN = "|TInterface\\RaidFrame\\ReadyCheck-Ready:14|t",
 
 	-- DB version
 	DB_VERSION = 1,
@@ -248,6 +243,43 @@ local Constants = {
 
 function Constants.IsMidnightSeason2Active()
 	return time() >= Constants.MIDNIGHT_SEASON_2_START
+end
+
+-- Persistent per-character activity affinity. Tracker state resets weekly, but
+-- this profile lives beside it on the character record. One active week adds a
+-- point; unused history decays by 25% per reset so retired activities naturally
+-- stop being recommended. Repeated scans in one week only earn one point.
+local function ActivityPeriod(charState)
+	if charState and (charState.resetPeriodId or 0) > 0 then
+		return charState.resetPeriodId
+	end
+	local untilReset = C_DateAndTime and C_DateAndTime.GetSecondsUntilWeeklyReset
+	local seconds = untilReset and untilReset() or 0
+	return math.floor((time() + seconds) / 604800)
+end
+
+function Constants.GetActivityAffinity(charState, activity)
+	local profile = charState and charState.activityProfile
+	local entry = profile and profile[activity]
+	if not entry then return 0 end
+	local elapsed = math.max(0, ActivityPeriod(charState) - (entry.scorePeriod or ActivityPeriod(charState)))
+	return (entry.score or 0) * (0.75 ^ elapsed)
+end
+
+function Constants.RecordActivity(charState, activity, detail)
+	if not (charState and activity) then return end
+	charState.activityProfile = charState.activityProfile or {}
+	local period = ActivityPeriod(charState)
+	local entry = charState.activityProfile[activity] or {}
+	charState.activityProfile[activity] = entry
+	if entry.creditedPeriod ~= period then
+		entry.score = math.min(4, Constants.GetActivityAffinity(charState, activity) + 1)
+		entry.scorePeriod = period
+		entry.creditedPeriod = period
+		entry.activeWeeks = (entry.activeWeeks or 0) + 1
+	end
+	entry.lastActivePeriod = period
+	if detail and (not entry.highest or detail > entry.highest) then entry.highest = detail end
 end
 
 -- Equipment slots that carry item level (excludes shirt=4 and tabard=19).

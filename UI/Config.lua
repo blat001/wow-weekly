@@ -44,6 +44,15 @@ function Config:SetAllTrackers(val)
 	end
 end
 
+function Config:GetReadyCraftCrest()
+	local po = WoWWeekly.db and WoWWeekly.db.profileOptions
+	return (po and po.readyCraftCrest == "hero") and "hero" or "myth"
+end
+
+function Config:SetReadyCraftCrest(crestType)
+	WoWWeekly.db.profileOptions.readyCraftCrest = crestType == "hero" and "hero" or "myth"
+end
+
 local function ClassColor(classFile)
 	return classFile and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile]
 end
@@ -185,7 +194,7 @@ function Config:Refresh()
 		y = y - 24
 	end
 
-	-- One checkbox row. kind: "tracker" | "char" | "group". For "group",
+	-- One checkbox row. kind: "tracker" | "char" | "group" | "crest". For "group",
 	-- childIds is the list of tracker IDs the master toggle controls.
 	local function addCheck(kind, key, text, color, checked, indent, childIds)
 		checkIdx = checkIdx + 1
@@ -197,6 +206,8 @@ function Config:Refresh()
 			cb:SetScript("OnClick", function(self)
 				if self.kind == "tracker" then
 					Config:SetTrackerEnabled(self.key, self:GetChecked())
+				elseif self.kind == "crest" then
+					Config:SetReadyCraftCrest(self.key)
 				elseif self.kind == "group" then
 					local v = self:GetChecked()
 					for _, id in ipairs(self.childIds or {}) do Config:SetTrackerEnabled(id, v) end
@@ -263,6 +274,11 @@ function Config:Refresh()
 			addCheck("group", label, "|cFFFFD100" .. label .. "|r", GOLD, anyOn, 0, childIds)
 			for _, t in ipairs(list) do
 				addCheck("tracker", t.id, t.label, nil, Config:IsTrackerEnabled(t.id), 24)
+				if t.id == Constants.TRACKER_READYTOCRAFT then
+					local selected = Config:GetReadyCraftCrest()
+					addCheck("crest", "hero", "Use Hero Mistcrests", nil, selected == "hero", 48)
+					addCheck("crest", "myth", "Use Myth Mistcrests", nil, selected == "myth", 48)
+				end
 			end
 			y = y - 6
 		end

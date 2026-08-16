@@ -16,6 +16,15 @@ local function ClassColor(classFile)
     return Constants.COLOR_WHITE
 end
 
+local function CharacterHeaderLabel(charState, fallbackKey)
+    local name = charState.name or fallbackKey
+    local ilvl = tonumber(charState.ilvl)
+    if ilvl and ilvl > 0 then
+        return string.format("%s (%.0f)", name, ilvl)
+    end
+    return name
+end
+
 
 -- Build the column order: the character you're logged into is always first,
 -- followed by the other *tracked* characters (sorted by level/ilvl).
@@ -49,6 +58,12 @@ function Tooltip:Show(anchorFrame)
     local db = WoWWeekly.db
     if not db or not db.chars then return end
 
+    -- If the weekly reset happened while we stayed logged in, sweep stale
+    -- character snapshots before rendering so old-week numbers never show.
+    if WeeklyReset and WeeklyReset.CheckAndApplyWeeklyReset then
+        WeeklyReset:CheckAndApplyWeeklyReset()
+    end
+
     -- Refresh the current character's trackers so live data (e.g. a keystone
     -- looted this session) is up to date whenever you open the grid.
     if TrackerRegistry and TrackerRegistry.ScanAll then TrackerRegistry:ScanAll() end
@@ -75,7 +90,7 @@ function Tooltip:Show(anchorFrame)
     tip:SetCell(hdr, 1, Constants.COLOR_GRAY .. "Task" .. Constants.COLOR_RESET)
     for i, key in ipairs(charKeys) do
         local c = db.chars[key]
-        local label = c.name or key
+        local label = CharacterHeaderLabel(c, key)
         if WeeklyReset:IsWeekStale(key) then
             label = Constants.COLOR_GRAY .. label .. " (old)" .. Constants.COLOR_RESET
         else
@@ -154,92 +169,159 @@ function Tooltip:Show(anchorFrame)
     -- Any tracker without a recognized group falls into a trailing "Other" section
     renderGroup("Other", ungrouped)
 
-    -- Recommended: who to play next and what's left. For each character, collect
-    -- incomplete weekly *goals* (trackers flagged countsForRecommend that are
-    -- relevant to that character), then rank by unfinished vault slots, then ilvl.
+    -- Rank every character by its single best plausible next action. Activities
+    -- already started this week get a strong boost. Dungeon/Raid relevance is
+    -- supplied by their trackers (recent runs/kills), and low-rank professions
+    -- are filtered by the profession tracker.
+    local basePriority = {
+        [Constants.TRACKER_BOUNTYMAP] = 760,
+        [Constants.TRACKER_METAQUEST] = 720,
+        [Constants.TRACKER_DELVES] = 650,
+        [Constants.TRACKER_GILDEDSTASH] = 620,
+        [Constants.TRACKER_TIMEWALKING] = 600,
+        [Constants.TRACKER_TURNBACKSURGE] = 560,
+        [Constants.TRACKER_PURGINGVAULTS] = 550,
+        [Constants.TRACKER_COFFERKEYSHARDS] = 500,
+        [Constants.TRACKER_PROFESSION1] = 300,
+        [Constants.TRACKER_PROFESSION2] = 300,
+    }
+
+    local activityForTracker = {
+        [Constants.TRACKER_DELVES] = "delves",
+        [Constants.TRACKER_GILDEDSTASH] = "delves",
+        [Constants.TRACKER_BOUNTYMAP] = "delves",
+        [Constants.TRACKER_MYTHICPLUS] = "mplus",
+        [Constants.TRACKER_RAID] = "raid",
+        [Constants.TRACKER_PROFESSION1] = "professions",
+        [Constants.TRACKER_PROFESSION2] = "professions",
+    }
+
+    local function actionScore(t, c)
+        local st = c.trackers[t.id] or {}
+        local score = basePriority[t.id] or 450
+        -- Finishing something already underway is normally the best next move.
+        if t.id == Constants.TRACKER_MYTHICPLUS and st.hasRuns then
+            score = 1000 + (st.rawProgress or 0)
+        elseif t.id == Constants.TRACKER_RAID and st.hasKills then
+            score = 980 + (st.count or 0)
+        elseif t.id == Constants.TRACKER_BOUNTYMAP and st.state == "inbags" then
+            score = 960
+        elseif t.id == Constants.TRACKER_METAQUEST and (st.cur or 0) > 0 then
+            score = 940 + (st.cur or 0)
+        elseif t.id == Constants.TRACKER_DELVES and (st.rawProgress or 0) > 0 then
+            score = 900 + (st.rawProgress or 0)
+        elseif t.id == Constants.TRACKER_TIMEWALKING and (st.cur or 0) > 0 then
+            score = 880 + (st.cur or 0)
+        elseif t.id == Constants.TRACKER_GILDEDSTASH and (st.looted or 0) > 0 then
+            score = 860 + (st.looted or 0)
+        end
+        local activity = activityForTracker[t.id]
+        if activity then
+            score = score + math.min(160, Constants.GetActivityAffinity(c, activity) * 40)
+        end
+        return score
+    end
+
     local recs = {}
     for _, key in ipairs(charKeys) do
         local c = db.chars[key]
-        local vaultIncomplete = 0
-        -- First pass: find every qualifying incomplete tracker for this char.
-        local incByTracker, incList = {}, {}
+        local best
         for _, t in pairs(TrackerRegistry:GetAll()) do
             if t.countsForRecommend then
-                local enabled = true
-                if Config and Config.IsTrackerEnabled then enabled = Config:IsTrackerEnabled(t.id) end
+                local enabled = not (Config and Config.IsTrackerEnabled)
+                    or Config:IsTrackerEnabled(t.id)
                 local relevant = (t.IsRelevant == nil) or t:IsRelevant(c)
-                -- Skip vault gear the character has outgeared (avg ilvl based)
+                -- A decaying history can make established M+/Raid characters
+                -- relevant before they begin that activity in the current week.
+                local activity = activityForTracker[t.id]
+                if not relevant and (activity == "mplus" or activity == "raid") then
+                    relevant = Constants.GetActivityAffinity(c, activity) >= 0.5
+                end
                 local worthwhile = (t.StopIlvl == nil)
                     or Constants.VaultWorthDoing(c, t:StopIlvl(c))
                 if enabled and relevant and worthwhile and t.IsComplete and not t:IsComplete(c) then
-                    incByTracker[t.id] = t
-                    incList[#incList + 1] = t
-                    if t.group == "vault" then vaultIncomplete = vaultIncomplete + 1 end
-                end
-            end
-        end
-        -- Second pass: build the to-do strings. Collapse REC_GROUPS members
-        -- (e.g. delves) into one "Label (a, b, c)" entry listing only the
-        -- incomplete ones; everything else stays standalone via GetAction.
-        local remaining, grouped = {}, {}
-        for _, rg in ipairs(Constants.REC_GROUPS or {}) do
-            local shorts, seen = {}, {}
-            local function addShort(s)
-                if s and not seen[s] then seen[s] = true; shorts[#shorts + 1] = s end
-            end
-            for _, m in ipairs(rg.members) do
-                local t = incByTracker[m.id]
-                if t then
-                    grouped[m.id] = true
-                    -- RecTags-driven members (professions) contribute deduped
-                    -- sub-task tags; fixed-short members (delves) contribute one.
-                    if t.RecTags then
-                        for _, tag in ipairs(t:RecTags(c)) do addShort(tag) end
-                    else
-                        addShort(m.short)
+                    local score = actionScore(t, c)
+                    if not best or score > best.score
+                        or (score == best.score and (t.order or 999) < (best.order or 999)) then
+                        best = {
+                            score = score,
+                            order = t.order or 999,
+                            text = (t.GetAction and t:GetAction(c)) or t.label,
+                        }
                     end
                 end
             end
-            if #shorts > 0 then
-                remaining[#remaining + 1] = rg.label .. " (" .. table.concat(shorts, ", ") .. ")"
-            end
-        end
-        for _, t in ipairs(incList) do
-            if not grouped[t.id] then
-                remaining[#remaining + 1] = (t.GetAction and t:GetAction(c)) or t.label
-            end
         end
         recs[#recs + 1] = {
-            name = c.name or key, classFile = c.classFile, ilvl = c.ilvl or 0,
-            remaining = remaining, vaultIncomplete = vaultIncomplete,
+            name = c.name or key,
+            classFile = c.classFile,
+            ilvl = c.ilvl or 0,
+            best = best,
+            needsCalibration = c.playedSeason ~= Constants.MIDNIGHT_SEASON_KEY,
+            engagement = ((c.seasonPlayed or 0) / 3600)
+                + Constants.GetActivityAffinity(c, "mplus") * 2
+                + Constants.GetActivityAffinity(c, "raid") * 2
+                + Constants.GetActivityAffinity(c, "delves")
+                + Constants.GetActivityAffinity(c, "professions") * 0.5,
         }
     end
     table.sort(recs, function(a, b)
-        if a.vaultIncomplete ~= b.vaultIncomplete then return a.vaultIncomplete > b.vaultIncomplete end
-        local ar, br = #a.remaining > 0, #b.remaining > 0
-        if ar ~= br then return ar end                 -- chars with work above finished ones
-        if a.ilvl ~= b.ilvl then return a.ilvl > b.ilvl end
+        local aw, bw = a.best ~= nil, b.best ~= nil
+        if aw ~= bw then return aw end
+        -- Main-like characters (more Season 2 play and sustained activity)
+        -- come first; their best current action breaks down what to do next.
+        if a.engagement ~= b.engagement then return a.engagement > b.engagement end
+        local as, bs = a.best and a.best.score or -1, b.best and b.best.score or -1
+        if as ~= bs then return as > bs end
+        -- At equal opportunity, the lower-geared character benefits more.
+        if a.ilvl ~= b.ilvl then return a.ilvl < b.ilvl end
         return a.name < b.name
     end)
 
     tip:AddSeparator(2, 1, 1, 1, 0.6)
     local recHdr = tip:AddLine()
-    tip:SetCell(recHdr, 1, Constants.COLOR_YELLOW .. "Recommended" .. Constants.COLOR_RESET,
+    tip:SetCell(recHdr, 1, Constants.COLOR_YELLOW .. "Weekly Game Plan" .. Constants.COLOR_RESET,
         GameFontNormal, "LEFT", numCols)
     tip:AddSeparator(1, 1, 1, 1, 0.25)
-    for idx, r in ipairs(recs) do
-        local line = tip:AddLine()
-        -- Mark the single top pick (only if it actually has work to do)
-        local lead = (idx == 1 and #r.remaining > 0)
-            and (Constants.COLOR_YELLOW .. "> " .. Constants.COLOR_RESET) or "  "
-        tip:SetCell(line, 1, lead .. ClassColor(r.classFile) .. r.name .. Constants.COLOR_RESET)
-        local todo
-        if #r.remaining == 0 then
-            todo = Constants.COLOR_GREEN .. "all done" .. Constants.COLOR_RESET
-        else
-            todo = Constants.COLOR_WHITE .. table.concat(r.remaining, ", ") .. Constants.COLOR_RESET
+    local calibrationCount = 0
+    local calibrationNames = {}
+    for _, r in ipairs(recs) do
+        if r.needsCalibration then
+            calibrationCount = calibrationCount + 1
+            calibrationNames[#calibrationNames + 1] = ClassColor(r.classFile)
+                .. r.name .. Constants.COLOR_RESET
         end
-        tip:SetCell(line, 2, todo, nil, "LEFT", numCols - 1)
+    end
+    local calibratedCount = #recs - calibrationCount
+    if calibratedCount == 0 then
+        local warning = tip:AddLine()
+        tip:SetCell(warning, 1,
+            Constants.COLOR_YELLOW .. "I can't guide your warband yet." .. Constants.COLOR_RESET,
+            nil, "LEFT", numCols)
+        local loginLine = tip:AddLine()
+        tip:SetCell(loginLine, 1, Constants.COLOR_WHITE .. "Log into: " .. Constants.COLOR_RESET
+            .. table.concat(calibrationNames, ", "), nil, "LEFT", numCols)
+    else
+        if calibrationCount > 0 then
+            local hint = tip:AddLine()
+            tip:SetCell(hint, 1,
+                Constants.COLOR_GRAY .. "More paths unlock after you visit: " .. Constants.COLOR_RESET
+                    .. table.concat(calibrationNames, ", "), nil, "LEFT", numCols)
+            tip:AddSeparator(1, 0.3, 0.3, 0.3, 0.35)
+        end
+        local rankIndex = 0
+        for _, r in ipairs(recs) do
+          if not r.needsCalibration then
+            rankIndex = rankIndex + 1
+            local line = tip:AddLine()
+            local rank = Constants.COLOR_GRAY .. rankIndex .. ". " .. Constants.COLOR_RESET
+            tip:SetCell(line, 1, rank .. ClassColor(r.classFile) .. r.name .. Constants.COLOR_RESET)
+            local action = r.best
+                and (Constants.COLOR_WHITE .. r.best.text .. Constants.COLOR_RESET)
+                or Constants.CHECK_GREEN
+            tip:SetCell(line, 2, action, nil, "LEFT", numCols - 1)
+          end
+        end
     end
 
     -- Clickable footer that opens the tracked-characters config
