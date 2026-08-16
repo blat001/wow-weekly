@@ -24,6 +24,8 @@ local Constants = {
 	TRACKER_PREY_NIGHTMARE = "preynightmare",
 	TRACKER_METAQUEST = "metaquest",
 	TRACKER_RITUALSITES = "ritualsites",
+	TRACKER_TURNBACKSURGE = "turnbacksurge",
+	TRACKER_PURGINGVAULTS = "purgingvaults",
 	TRACKER_TIMEWALKING = "timewalking",
 
 	-- Delves (Great Vault world track)
@@ -37,6 +39,11 @@ local Constants = {
 	MPLUS_MYTH_THRESHOLD = 4,
 	MPLUS_MIN_LEVEL = 10,
 
+	-- Midnight Season 2 begins with the US weekly reset on Aug 18, 2026 at
+	-- 15:00 UTC. During the preceding 12.1 pre-season week, Mythic+ and
+	-- Bountiful Delves are unavailable (Mythic 0 and ordinary Delves remain).
+	MIDNIGHT_SEASON_2_START = 1787065200,
+
 	-- Raid (Great Vault raid track). Slots unlock at 2/4/6 boss kills.
 	RAID_VAULT_MAX = 6,
 	RAID_FULL_THRESHOLD = 6,
@@ -44,11 +51,12 @@ local Constants = {
 	-- A Great Vault source stops being worth doing (for GEAR) once a character is
 	-- geared a full tier above what it rewards. Judged by AVERAGE equipped item
 	-- level, NOT a single slot (a low slot may be a deliberate BiS piece).
-	-- Midnight 12.0.5 vault ceilings: delves give Hero (top 259), M+ gives Myth
-	-- floor (272), raid gives Myth (top 289). Rule: only skip delves once you are
-	-- in Mythic gear (avg >= Myth floor, 272). M+ and raid give the best gear in
+	-- Midnight Season 2 vault ceilings: delves give Hero-track gear (top 321),
+	-- while Myth gear starts at 318 and normally tops out at 334 (exceptional
+	-- raid rewards can reach 337). Rule: only skip delves once you are in Myth
+	-- gear (avg >= Myth floor, 318). M+ and raid give the best gear in
 	-- the game, so they never auto-skip. 0 = never skip.
-	VAULT_STOP_DELVE = 272,  -- skip delves once average ilvl reaches Mythic gear
+	VAULT_STOP_DELVE = 318,  -- skip delves once average ilvl reaches Myth gear
 	VAULT_STOP_MPLUS = 0,    -- never (M+ gives the best dungeon gear)
 	VAULT_STOP_RAID  = 0,    -- never (raid gives the best gear)
 
@@ -152,7 +160,7 @@ local Constants = {
 		93913,  -- World Boss
 		94457,  -- Battlegrounds
 		95842,  -- Void Assaults
-		95843,  -- Ritual Sites
+		98232,  -- Midnight: Vaults of Atal'Utek (Coiled Isle)
 	},
 
 	-- Short display names for the chosen meta-quest variant, so the row can show
@@ -172,7 +180,7 @@ local Constants = {
 		[93913] = "World Boss",
 		[94457] = "Battlegrounds",
 		[95842] = "Void Assaults",
-		[95843] = "Ritual Sites",
+		[98232] = "Coiled Isle",
 	},
 
 	-- Timewalking weekend event weekly ("A <X> Path Through Time"). One per week
@@ -194,18 +202,23 @@ local Constants = {
 		44166,  -- A Frozen Path Through Time (WotLK)  -- older, unconfirmed for 12.0
 	},
 
-	-- Ritual Sites weekly quest. Always available, and exposes a completion
-	-- PERCENTAGE we read via C_QuestLog.GetQuestProgressBarPercent(). Ritual
-	-- sites feed the SAME Great Vault World track as delves, so the tracker
+	-- Coiled Isle weekly quest ("Midnight: Vaults of Atal'Utek"). Always
+	-- available, and exposes a completion PERCENTAGE we read via
+	-- C_QuestLog.GetQuestProgressBarPercent(). Coiled Isle activities feed the
+	-- SAME Great Vault World track as delves, so the tracker
 	-- shares the delve vault gear rule (VAULT_STOP_DELVE) and there is no
-	-- separate ritual vault row.
-	QUEST_RITUAL_SITES = 95843,
+	-- separate Coiled Isle vault row. Keep the old constant name as an alias for
+	-- compatibility with any external consumers.
+	QUEST_COILED_ISLE = 98232,
+	QUEST_RITUAL_SITES = 98232,
+	QUEST_TURN_BACK_SURGE = 96995,
+	QUEST_PURGING_VAULTS = 95520,
 
 	-- Row groups for the tooltip, in display order. Each tracker declares a
 	-- `group` (matching an id below) and an `order` for sorting within it.
 	GROUPS = {
 		{ id = "delves",      label = "Delves" },
-		{ id = "rituals",     label = "Ritual Sites" },
+		{ id = "rituals",     label = "Coiled Isle" },
 		{ id = "weekly",      label = "Weekly Quest" },
 		{ id = "prey",        label = "Prey" },
 		{ id = "professions", label = "Professions" },
@@ -232,6 +245,10 @@ local Constants = {
 	-- DB version
 	DB_VERSION = 1,
 }
+
+function Constants.IsMidnightSeason2Active()
+	return time() >= Constants.MIDNIGHT_SEASON_2_START
+end
 
 -- Equipment slots that carry item level (excludes shirt=4 and tabard=19).
 local ILVL_SLOTS = { 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17 }

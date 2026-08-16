@@ -60,6 +60,9 @@ function T:Scan(charState)
 end
 
 function T:GetSummary(charState)
+	if not Constants.IsMidnightSeason2Active() then
+		return Constants.COLOR_GRAY .. "Unavailable" .. Constants.COLOR_RESET
+	end
 	local st = charState.trackers[self.id] or {}
 	if not st.max or st.max <= 0 then
 		return Constants.COLOR_GRAY .. "\226\128\148" .. Constants.COLOR_RESET
@@ -77,12 +80,14 @@ function T:GetSummary(charState)
 end
 
 function T:IsComplete(charState)
+	if not Constants.IsMidnightSeason2Active() then return true end
 	local st = charState.trackers[self.id] or {}
 	return st.max ~= nil and st.max > 0 and (st.looted or 0) >= st.max
 end
 
 -- Only recommend once we actually have the weekly cap for this character.
 function T:IsRelevant(charState)
+	if not Constants.IsMidnightSeason2Active() then return false end
 	local st = charState.trackers[self.id] or {}
 	return st.max ~= nil and st.max > 0
 end

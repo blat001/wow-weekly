@@ -22,6 +22,7 @@ function T:Scan(charState)
 	-- A slot only awards Myth-track gear if its run is +10 or higher.
 	-- Report the highest slot threshold (1/4/8) whose filling run is +10+.
 	local count = 0
+	local rawProgress = 0
 	local hasRuns = false
 	if C_MythicPlus and C_MythicPlus.RequestMapInfo then pcall(C_MythicPlus.RequestMapInfo) end
 	-- NOTE: the M+ track is the "Activities" threshold type (there is no .MythicPlus).
@@ -30,6 +31,7 @@ function T:Scan(charState)
 	if ok and activities then
 		for _, a in ipairs(activities) do
 			if (a.progress or 0) > 0 then hasRuns = true end
+			if (a.progress or 0) > rawProgress then rawProgress = a.progress end
 			if (a.level or 0) >= Constants.MPLUS_MIN_LEVEL then
 				if (a.threshold or 0) > count then count = a.threshold end
 			end
@@ -38,6 +40,7 @@ function T:Scan(charState)
 	end
 
 	st.count = count
+	st.rawProgress = rawProgress
 	st.hasRuns = hasRuns
 	st.lastUpdated = time()
 	charState.trackers[self.id] = st
@@ -45,7 +48,10 @@ end
 
 function T:GetSummary(charState)
 	local st = charState.trackers[self.id] or {}
-	local n = st.count or 0
+	-- Mythic 0 fills the Dungeon vault during the pre-season week. Count all
+	-- qualifying dungeon runs now; switch to the +10 Myth-quality goal when
+	-- Season 2 begins.
+	local n = Constants.IsMidnightSeason2Active() and (st.count or 0) or (st.rawProgress or 0)
 
 	-- Characters who don't do M+ (no runs this week) get a gray dash.
 	if n == 0 and not st.hasRuns then
@@ -72,7 +78,8 @@ end
 
 function T:IsComplete(charState)
 	local st = charState.trackers[self.id] or {}
-	return (st.count or 0) >= Constants.MPLUS_MYTH_THRESHOLD
+	local n = Constants.IsMidnightSeason2Active() and (st.count or 0) or (st.rawProgress or 0)
+	return n >= Constants.MPLUS_MYTH_THRESHOLD
 end
 
 -- Only recommend M+ to characters who actually ran M+ this week.
@@ -83,7 +90,10 @@ end
 
 function T:GetAction(charState)
 	local st = charState.trackers[self.id] or {}
-	return string.format("M+ vault (%d/%d)", st.count or 0, Constants.MPLUS_MYTH_THRESHOLD)
+	local active = Constants.IsMidnightSeason2Active()
+	local n = active and (st.count or 0) or (st.rawProgress or 0)
+	local label = active and "M+ vault" or "Mythic 0 vault"
+	return string.format("%s (%d/%d)", label, n, Constants.MPLUS_MYTH_THRESHOLD)
 end
 
 _G[ADDON_NAME .. "MythicPlusTracker"] = T

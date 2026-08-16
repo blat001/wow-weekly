@@ -8,14 +8,14 @@ WoW Weekly Tracker shows the weekly tasks you actually care about across your ma
 
 - **All characters in one grid.** Open the minimap or Titan button to see every tracked character side by side. The character you are on always appears first.
 - **"Who should I play next?" recommender.** A ranked list at the bottom tells you which character to log in and what they have left, prioritizing real gear upgrades. Finished characters show "all done."
-- **Gear-aware.** Delves and ritual sites automatically grey out for characters already in Mythic-level gear, since they no longer upgrade you. M+ and raid never get hidden.
+- **Gear-aware.** Delves and Coiled Isle automatically grey out for characters already in Mythic-level gear, since they no longer upgrade you. M+ and raid never get hidden.
 - **Organized by category** with clear sections and colored status, so you can read it at a glance.
 - **Pick your characters and rows.** A simple options panel with two tabs lets you choose which characters appear and toggle whole categories on or off (turn off anything you do not do).
 
 ## What it tracks
 
 - **Delves**: Bounty Map (Not Looted / In Bags / Used), Coffer Keys, Coffer Key Shards, and the weekly Gilded Stash (up to 4)
-- **Ritual Sites**: weekly completion progress
+- **Coiled Isle**: weekly completion progress
 - **Weekly Quest**: the rotating weekly meta objective and the Timewalking event weekly
 - **Prey**: Normal, Hard and Nightmare progress
 - **Professions**: weekly knowledge quest and treatise for both professions, plus "ready to craft" status

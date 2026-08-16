@@ -21,6 +21,7 @@ Trackers\GildedStash.lua
 Trackers\MetaQuest.lua
 Trackers\Timewalking.lua
 Trackers\RitualSites.lua
+Trackers\CoiledIsleWeeklies.lua
 Trackers\Prey.lua
 Trackers\WeeklyProfession.lua
 Trackers\ReadyToCraft.lua

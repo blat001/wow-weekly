@@ -42,7 +42,10 @@ end
 
 function DelveTracker:GetSummary(charState)
 	local st = charState.trackers[self.id] or {}
-	local n = st.count or 0
+	-- During the pre-season week ordinary Delves still fill the Great Vault;
+	-- there simply are no Bountiful rewards. Track all qualifying runs until
+	-- Season 2 starts, then resume the Tier 8+ quality goal.
+	local n = Constants.IsMidnightSeason2Active() and (st.count or 0) or (st.rawProgress or 0)
 	local color
 	if not Constants.VaultWorthDoing(charState, self:StopIlvl(charState)) then
 		color = Constants.COLOR_GRAY     -- in Mythic gear: delves no longer upgrade
@@ -57,17 +60,19 @@ function DelveTracker:GetSummary(charState)
 end
 
 function DelveTracker:StopIlvl(charState)
-	return Constants.VAULT_STOP_DELVE  -- skip delves once in Mythic gear (avg >= 272)
+	return Constants.VAULT_STOP_DELVE  -- skip delves once in Myth gear (avg >= 318)
 end
 
 function DelveTracker:IsComplete(charState)
 	local st = charState.trackers[self.id] or {}
-	return (st.count or 0) >= Constants.DELVE_HERO_THRESHOLD
+	local n = Constants.IsMidnightSeason2Active() and (st.count or 0) or (st.rawProgress or 0)
+	return n >= Constants.DELVE_HERO_THRESHOLD
 end
 
 function DelveTracker:GetAction(charState)
 	local st = charState.trackers[self.id] or {}
-	return string.format("Delves vault (%d/%d)", st.count or 0, Constants.DELVE_HERO_THRESHOLD)
+	local n = Constants.IsMidnightSeason2Active() and (st.count or 0) or (st.rawProgress or 0)
+	return string.format("Delves vault (%d/%d)", n, Constants.DELVE_HERO_THRESHOLD)
 end
 
 _G[ADDON_NAME .. "DelveTracker"] = DelveTracker

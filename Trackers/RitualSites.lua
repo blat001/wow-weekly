@@ -2,8 +2,8 @@ local ADDON_NAME = "WoWWeekly"
 local Constants = _G[ADDON_NAME .. "Constants"]
 local TrackerRegistry = _G[ADDON_NAME .. "TrackerRegistry"]
 
--- Ritual Sites. Always available each week, with a progress-bar quest
--- (QUEST_RITUAL_SITES) whose completion percentage we read directly. They feed
+-- Coiled Isle. Always available each week, with a progress-bar quest
+-- (QUEST_COILED_ISLE) whose completion percentage we read directly. It feeds
 -- the SAME Great Vault World track as delves, so this tracker shares the delve
 -- vault gear rule (skip once in Mythic gear) and there is no separate ritual
 -- vault row -- the "World" row under Great Vault already counts the combined
@@ -12,7 +12,7 @@ local EMDASH = "\226\128\148"
 
 -- Returns (percent 0-100, completed bool). percent is nil if the quest is not
 -- currently readable (e.g. not yet in this character's log this session).
-local function ReadRitualProgress(qid)
+local function ReadCoiledIsleProgress(qid)
 	if not qid or qid <= 0 then return nil, false end
 	local completed = C_QuestLog.IsQuestFlaggedCompleted(qid)
 	if completed then return 100, true end
@@ -37,7 +37,7 @@ local T = {
 
 function T:Scan(charState)
 	local st = charState.trackers[self.id] or {}
-	local pct, completed = ReadRitualProgress(Constants.QUEST_RITUAL_SITES)
+	local pct, completed = ReadCoiledIsleProgress(Constants.QUEST_COILED_ISLE)
 	if pct ~= nil then
 		st.pct = pct
 		st.completed = completed
@@ -47,7 +47,7 @@ function T:Scan(charState)
 	charState.trackers[self.id] = st
 end
 
--- Shares the delve vault gear ceiling: ritual sites only feed the Hero-capped
+-- Shares the delve vault gear ceiling: Coiled Isle only feeds the Hero-capped
 -- World vault, so they stop being worth doing once you are in Mythic gear.
 function T:StopIlvl(charState)
 	return Constants.VAULT_STOP_DELVE
@@ -81,9 +81,9 @@ end
 function T:GetAction(charState)
 	local st = charState.trackers[self.id] or {}
 	if st.pct and st.pct > 0 then
-		return string.format("Ritual sites (%d%%)", math.floor(st.pct))
+		return string.format("Coiled Isle (%d%%)", math.floor(st.pct))
 	end
-	return "Ritual sites"
+	return "Coiled Isle"
 end
 
 _G[ADDON_NAME .. "RitualSitesTracker"] = T
