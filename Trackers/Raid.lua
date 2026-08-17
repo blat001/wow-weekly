@@ -31,6 +31,14 @@ local function TrackColor(track)
 	return Constants.COLOR_PURPLE
 end
 
+local function RaidDifficultyRank(level)
+	if level == 16 then return 4 end -- Mythic
+	if level == 15 then return 3 end -- Heroic
+	if level == 14 then return 2 end -- Normal
+	if level == 17 then return 1 end -- Raid Finder
+	return level or 0
+end
+
 local T = {
 	id = Constants.TRACKER_RAID,
 	label = "Raid",
@@ -52,12 +60,15 @@ function T:Scan(charState)
 	-- Report the highest slot threshold (2/4/6) whose run requirement is met.
 	local count = 0
 	local hasKills = false
+	local highestLevel = 0
 	local slots = {}
 	local ok, activities = pcall(C_WeeklyRewards.GetActivities,
 	                             Enum.WeeklyRewardChestThresholdType.Raid)
 	if ok and activities then
 		for _, a in ipairs(activities) do
 			if (a.progress or 0) > 0 then hasKills = true end
+			local difficultyRank = RaidDifficultyRank(a.level)
+			if (a.progress or 0) > 0 and difficultyRank > highestLevel then highestLevel = difficultyRank end
 			if (a.progress or 0) >= (a.threshold or 0) and (a.threshold or 0) > count then
 				count = a.threshold
 			end
@@ -96,7 +107,7 @@ function T:Scan(charState)
 	st.slots = slots
 	st.lastUpdated = time()
 	charState.trackers[self.id] = st
-	if hasKills then Constants.RecordActivity(charState, "raid") end
+	if hasKills then Constants.RecordActivity(charState, "raid", highestLevel) end
 end
 
 function T:GetSummary(charState)

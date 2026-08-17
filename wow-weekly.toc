@@ -2,7 +2,7 @@
 ## Title: WoW Weekly Tracker
 ## Notes: Track completion of weekly tasks (Delves, Keyshards, Professions) across main + alts
 ## Author: Barry Latimer
-## Version: 1.1.0
+## Version: 1.2.0
 ## SavedVariables: WoWWeeklyDB
 ## OptionalDeps: Titan, !LibUIDropDownMenu
 ## X-Curse-Project-ID: 1567214
@@ -25,7 +25,9 @@ Trackers\Prey.lua
 Trackers\WeeklyProfession.lua
 Trackers\ReadyToCraft.lua
 Trackers\MythicPlus.lua
+Trackers\MythicPlusProgress.lua
 Trackers\Raid.lua
+Trackers\RaidProgress.lua
 UI\Broker.lua
 UI\Tooltip.lua
 UI\Config.lua

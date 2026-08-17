@@ -84,7 +84,7 @@ end
 
 function T:GetAction(charState)
 	local s = (charState.trackers[self.id] or {}).state
-	if s == "inbags" then return "Use your Bounty Map in a Tier 8+ Delve for Hero gear" end
+	if s == "inbags" then return "T8+ Delve with your Map for Hero gear" end
 	return "Complete Purging the Vaults for a Bounty Map"
 end
 

@@ -2,7 +2,7 @@
 
 **Setup Date:** 2026-06-06  
 **Addon Version:** 1.0.0  
-**Interface Version:** 110200 (War Within / Midnight era)
+**Interface Version:** 120100 (Midnight 12.1.0)
 
 ## Libraries Installed
 

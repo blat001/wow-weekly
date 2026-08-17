@@ -154,9 +154,9 @@ function T:GetAction(charState)
 	end
 	if not nextThreshold then return "Dungeon Great Vault complete" end
 	local remaining = nextThreshold - runs
-	local activity = active and "+10 dungeon" or "Mythic 0"
+	local activity = active and "+10" or "M0"
 	local noun = remaining == 1 and "run" or "runs"
-	return string.format("%d more %s %s for your next Great Vault slot",
+	return string.format("%d more %s %s for next Vault slot",
 		remaining, activity, noun)
 end
 

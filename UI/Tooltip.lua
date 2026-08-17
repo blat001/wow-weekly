@@ -58,6 +58,13 @@ function Tooltip:Show(anchorFrame)
     local db = WoWWeekly.db
     if not db or not db.chars then return end
 
+    -- Opening the UI is another reliable opportunity to capture equipment
+    -- data after the login loading sequence has completed.
+    local Database = _G[ADDON_NAME .. "Database"]
+    if Database and Database.RefreshCurrentCharacter then
+        Database:RefreshCurrentCharacter()
+    end
+
     -- If the weekly reset happened while we stayed logged in, sweep stale
     -- character snapshots before rendering so old-week numbers never show.
     if WeeklyReset and WeeklyReset.CheckAndApplyWeeklyReset then
@@ -79,6 +86,7 @@ function Tooltip:Show(anchorFrame)
 
     local tip = LibQTip:Acquire(ADDON_NAME .. "Tip", numCols, unpack(just))
     self.tip = tip
+	if tip.SetBackdropColor then tip:SetBackdropColor(0.02, 0.015, 0.03, 0.96) end
 
     -- Title row, centered across the whole table
     local titleLine = tip:AddHeader("")
@@ -163,12 +171,6 @@ function Tooltip:Show(anchorFrame)
         end
     end
 
-    for _, grp in ipairs(Constants.GROUPS) do
-        renderGroup(grp.label, byGroup[grp.id] or {})
-    end
-    -- Any tracker without a recognized group falls into a trailing "Other" section
-    renderGroup("Other", ungrouped)
-
     -- Rank every character by its single best plausible next action. Activities
     -- already started this week get a strong boost. Dungeon/Raid relevance is
     -- supplied by their trackers (recent runs/kills), and low-rank professions
@@ -195,6 +197,34 @@ function Tooltip:Show(anchorFrame)
         [Constants.TRACKER_PROFESSION1] = "professions",
         [Constants.TRACKER_PROFESSION2] = "professions",
     }
+
+    local delveGearTrackers = {
+        [Constants.TRACKER_DELVES] = true,
+        [Constants.TRACKER_GILDEDSTASH] = true,
+        [Constants.TRACKER_BOUNTYMAP] = true,
+    }
+
+    local function hasMythTrackActivity(c)
+        local function hasMythSlot(trackerID)
+            local st = c.trackers[trackerID] or {}
+            for _, slot in ipairs(st.slots or {}) do
+                if slot.unlocked and slot.track == "M" then return true end
+            end
+            return false
+        end
+        if hasMythSlot(Constants.TRACKER_MYTHICPLUS)
+            or hasMythSlot(Constants.TRACKER_RAID) then return true end
+
+        local profile = c.activityProfile or {}
+        local mplus = profile.mplus
+        if mplus and (mplus.highest or 0) >= Constants.MPLUS_MIN_LEVEL
+            and Constants.GetActivityAffinity(c, "mplus") >= 0.5 then return true end
+
+        local raid = profile.raid
+        if raid and (raid.highest or 0) >= 3
+            and Constants.GetActivityAffinity(c, "raid") >= 0.5 then return true end
+        return false
+    end
 
     local function actionScore(t, c)
         local st = c.trackers[t.id] or {}
@@ -239,6 +269,9 @@ function Tooltip:Show(anchorFrame)
                 end
                 local worthwhile = (t.StopIlvl == nil)
                     or Constants.VaultWorthDoing(c, t:StopIlvl(c))
+                if worthwhile and delveGearTrackers[t.id] and hasMythTrackActivity(c) then
+                    worthwhile = false
+                end
                 if enabled and relevant and worthwhile and t.IsComplete and not t:IsComplete(c) then
                     local score = actionScore(t, c)
                     if not best or score > best.score
@@ -323,6 +356,38 @@ function Tooltip:Show(anchorFrame)
           end
         end
     end
+
+    -- The plan is the primary value of the addon, so show it before the detailed
+    -- tracker grid. The grid remains the evidence behind each recommendation.
+    -- Put the character roster's established endgame path first. This keeps the
+    -- same grid for every alt while making the addon feel native to M+ players,
+    -- raiders, or both instead of imposing one fixed activity hierarchy.
+    local displayGroups = {}
+    for _, grp in ipairs(Constants.GROUPS) do displayGroups[#displayGroups + 1] = grp end
+    local groupPriority = { raidprogress = 0, mplus = 0 }
+    for _, key in ipairs(charKeys) do
+        local c = db.chars[key]
+        groupPriority.raidprogress = groupPriority.raidprogress + Constants.GetActivityAffinity(c, "raid")
+        groupPriority.mplus = groupPriority.mplus + Constants.GetActivityAffinity(c, "mplus")
+    end
+    if groupPriority.mplus > groupPriority.raidprogress then
+        table.sort(displayGroups, function(a, b)
+            if a.id == "mplus" then return true end
+            if b.id == "mplus" then return false end
+            if a.id == "raidprogress" then return true end
+            if b.id == "raidprogress" then return false end
+            local ai, bi
+            for i, grp in ipairs(Constants.GROUPS) do
+                if grp.id == a.id then ai = i end
+                if grp.id == b.id then bi = i end
+            end
+            return (ai or 999) < (bi or 999)
+        end)
+    end
+    for _, grp in ipairs(displayGroups) do
+        renderGroup(grp.label, byGroup[grp.id] or {})
+    end
+    renderGroup("Other", ungrouped)
 
     -- Clickable footer that opens the tracked-characters config
     tip:AddSeparator(2, 1, 1, 1, 0.6)

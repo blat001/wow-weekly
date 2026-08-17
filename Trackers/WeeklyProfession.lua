@@ -2,11 +2,9 @@ local ADDON_NAME = "WoWWeekly"
 local Constants = _G[ADDON_NAME .. "Constants"]
 local TrackerRegistry = _G[ADDON_NAME .. "TrackerRegistry"]
 
--- One tracker per primary profession slot (1 and 2). Each cell stacks the
--- character's profession name with a dotted "Weekly" line and "Treatise" line,
--- each dot green (done) / red (not done) / gray (this profession has no such
--- quest). Because professions differ per character the row label is generic
--- ("Primary"/"Secondary") and the detail lives in the cell.
+-- One tracker per primary profession slot (1 and 2). Each compact cell shows
+-- the profession name followed by W (weekly) and T (treatise), using a check
+-- for completion and a gray dash otherwise.
 local EMDASH = "\226\128\148"
 
 -- Returns true if any quest in the list is flagged complete.
@@ -18,17 +16,9 @@ local function anyDone(questIDs)
 	return false
 end
 
--- One dotted status line, e.g. "<greendot> Weekly". done == nil -> gray (untracked).
-local function statusLine(label, done)
-	local dot
-	if done == nil then
-		dot = Constants.DOT_GRAY
-	elseif done then
-		dot = Constants.DOT_GREEN
-	else
-		dot = Constants.DOT_RED
-	end
-	return dot .. " " .. Constants.COLOR_WHITE .. label .. Constants.COLOR_RESET
+local function compactStatus(label, done)
+	if done then return Constants.COLOR_WHITE .. label .. Constants.COLOR_RESET .. Constants.CHECK_GREEN end
+	return Constants.COLOR_GRAY .. label .. "-" .. Constants.COLOR_RESET
 end
 
 local function MakeProfessionTracker(slot, trackerId, label, order)
@@ -70,12 +60,9 @@ local function MakeProfessionTracker(slot, trackerId, label, order)
 		if not st.hasProf then
 			return Constants.COLOR_GRAY .. EMDASH .. Constants.COLOR_RESET
 		end
-		-- Profession name as a gold sub-heading so it reads distinctly from the
-		-- white dotted status lines below it.
 		local name = Constants.COLOR_GOLD .. (st.name or "?") .. Constants.COLOR_RESET
-		return name .. "\n"
-			.. statusLine("Weekly", st.weeklyDone) .. "\n"
-			.. statusLine("Treatise", st.treatiseDone)
+		return name .. " " .. compactStatus("W", st.weeklyDone)
+			.. " " .. compactStatus("T", st.treatiseDone)
 	end
 
 	-- Weekly sweep: the character's professions are still known after a reset -

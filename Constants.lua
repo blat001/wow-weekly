@@ -17,7 +17,13 @@ local Constants = {
 	TRACKER_PROFESSION2_TREATISE = "profession2treatise",
 	TRACKER_READYTOCRAFT = "readytocraft",
 	TRACKER_MYTHICPLUS = "mythicplus",
+	TRACKER_MPLUS_WEEK = "mplus_week",
+	TRACKER_MPLUS_KEY = "mplus_key",
 	TRACKER_RAID = "raid",
+	TRACKER_RAID_LFR = "raidprogress_lfr",
+	TRACKER_RAID_NORMAL = "raidprogress_normal",
+	TRACKER_RAID_HEROIC = "raidprogress_heroic",
+	TRACKER_RAID_MYTHIC = "raidprogress_mythic",
 	TRACKER_PREY_NORMAL = "preynormal",
 	TRACKER_PREY_HARD = "preyhard",
 	TRACKER_PREY_NIGHTMARE = "preynightmare",
@@ -46,6 +52,8 @@ local Constants = {
 	-- Raid (Great Vault raid track). Slots unlock at 2/4/6 boss kills.
 	RAID_VAULT_MAX = 6,
 	RAID_FULL_THRESHOLD = 6,
+	CURRENT_RAID_NAME = "Venomous Abyss",
+	CURRENT_RAID_BOSSES = 8,
 
 	-- A Great Vault source stops being worth doing (for GEAR) once a character is
 	-- geared a full tier above what it rewards. Judged by AVERAGE equipped item
@@ -211,10 +219,12 @@ local Constants = {
 	-- Row groups for the tooltip, in display order. Each tracker declares a
 	-- `group` (matching an id below) and an `order` for sorting within it.
 	GROUPS = {
-		{ id = "delves",      label = "Delves" },
+		{ id = "raidprogress", label = "Raid" },
+		{ id = "mplus",       label = "Mythic+" },
 		{ id = "rituals",     label = "Coiled Isle" },
 		{ id = "weekly",      label = "Weekly Quest" },
 		{ id = "prey",        label = "Prey" },
+		{ id = "delves",      label = "Delves" },
 		{ id = "professions", label = "Professions" },
 		{ id = "vault",       label = "Great Vault" },
 	},

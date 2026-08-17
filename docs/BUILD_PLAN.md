@@ -5,7 +5,7 @@
 > If a real library will not download, copy it from an already-installed addon (see Phase 1) —
 > **never** replace it with a hand-written stub.
 >
-> **Target client:** Retail WoW **Interface 120005** (Midnight 12.0.5).
+> **Target client:** Retail WoW **Interface 120100** (Midnight 12.1.0).
 > **Test loop:** edit files in `C:\working\wow-weekly` → copy to the AddOns folder → `/reload` → `/ww dump`.
 
 ---
@@ -310,7 +310,7 @@ function DelveTracker:GetSummary(charState)
 end
 ```
 
-**Confirm in-game:** that `Enum.WeeklyRewardChestThresholdType.World` exists on 12.0.5 and that delve
+**Confirm in-game:** that `Enum.WeeklyRewardChestThresholdType.World` exists on 12.1.0 and that delve
 progress shows up there; otherwise fall back to counting `SCENARIO_COMPLETE` events where the scenario
 is a delve of tier ≥ `DELVE_MIN_TIER` (record the event args via `/etrace`).
 

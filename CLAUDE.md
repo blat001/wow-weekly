@@ -6,7 +6,7 @@ A Retail WoW addon (Ace3 stack) that tracks completion of weekly tasks across a 
 ## Locked Decisions
 
 ### Architecture
-- **Target:** Retail client (War Within / Midnight era, Interface 110200)
+- **Target:** Retail client (Midnight 12.1.0, Interface 120100)
 - **Framework:** Ace3 (AceAddon, AceEvent, AceDB, AceConfig, AceConsole) + LibDataBroker + LibQTip + LibDBIcon
 - **Character ID:** `Name-Realm` string (account-wide single dataset, no profiles)
 - **Persistence:** SavedVariables (`WoWWeeklyDB`) — per-account, survives `/reload`, wipes only on reset
@@ -23,9 +23,10 @@ Each weekly activity is a self-contained Lua module that:
 This makes the addon extensible: adding a new tracker = one new file under `Trackers/`.
 
 ### Weekly Reset
-- `WeeklyReset:GetCurrentResetPeriodId()` computes a week number since a fixed epoch (Jan 1, 2000)
-- On login, if `currentResetPeriodId` has changed, `ApplyWeeklyReset()` wipes tracker state for the character
-- Stale rows (from prior weeks) are flagged gray in the alt grid
+- `WeeklyReset:GetCurrentResetPeriodId()` = `floor((time() + C_DateAndTime.GetSecondsUntilWeeklyReset()) / 604800)` — anchored to the real region reset (Tue 15:00 UTC US), not an arbitrary epoch
+- `CheckAndApplyWeeklyReset()` runs on login and on tooltip open; it sweeps ALL stored characters and wipes/restamps any char whose `resetPeriodId` is from an old week (the in-game reset clears everyone, logged in or not)
+- The sweep is cadence-aware: `cadence = "persistent"` state is kept (Coffer Keys, Ready to Craft crests); trackers with an `OnWeeklyReset` hook partially reset (professions); everything else is wiped
+- Stale rows (from prior weeks) are flagged gray in the alt grid — safety-net only; the sweep normally clears them first
 
 ## File Structure
 
@@ -97,7 +98,7 @@ Each tracker module must export a table with:
   label           = "Delves",        -- display name
   icon            = <textureid>,     -- icon for UI
   category        = "weekly",
-  cadence         = "weekly",
+  cadence         = "weekly",        -- or "persistent": state survives the reset sweep (banked currencies)
   events          = {"SCENARIO_COMPLETE", ...},  -- game events that trigger Scan
   enabledByDefault = true,
 
@@ -106,6 +107,8 @@ Each tracker module must export a table with:
   IsComplete(charState) -> bool,    -- returns true if done for the week
   GetSummary(charState) -> string,  -- short text like "3/4" or "150/250"
   RenderTooltip(charState, tooltip, lineNum),  -- render one row in the alt grid
+  OnWeeklyReset(charState),  -- OPTIONAL: partial reset at the sweep (professions keep
+                             -- the prof name, clear done flags); omit = state is wiped
 }
 ```
 
@@ -161,4 +164,3 @@ Barry is a DB/martech expert, new to Lua and WoW addon dev. The addon should:
 - Show all alts at a glance in a multi-column grid (similar to SavedInstances)
 - Be extensible (add new trackers without touching core code)
 - Survive `/reload` but reset weekly
-

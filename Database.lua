@@ -7,7 +7,10 @@ local Database = {}
 function Database:Initialize()
 	self.charKey = self:BuildCharKey()
 	self:RegisterCharacter()
-	WoWWeekly:RegisterEvent("PLAYER_LOGIN", function() self:OnPlayerLogin() end)
+	-- Equipment information can still be unavailable during addon initialization.
+	-- Refresh once the character has entered the world and whenever gear changes.
+	WoWWeekly:RegisterEvent("PLAYER_ENTERING_WORLD", function() self:RefreshCurrentCharacter() end)
+	WoWWeekly:RegisterEvent("PLAYER_EQUIPMENT_CHANGED", function() self:RefreshCurrentCharacter() end)
 end
 
 function Database:BuildCharKey()
@@ -43,17 +46,28 @@ function Database:RegisterCharacter()
 		}
 		WoWWeekly:Print("Registered character: " .. charKey)
 	else
-		-- Update last seen and level/ilvl
-		local charState = db.chars[charKey]
-		charState.lastSeen = time()
-		charState.level = UnitLevel("player")
-		charState.ilvl = select(2, GetAverageItemLevel())
-		charState.minSlotIlvl = Constants.GetMinEquippedIlvl()
+		self:RefreshCurrentCharacter()
 	end
 end
 
-function Database:OnPlayerLogin()
-	self:RegisterCharacter()
+function Database:RefreshCurrentCharacter()
+	local charState = WoWWeekly.db.chars[self.charKey]
+	if not charState then return end
+
+	charState.lastSeen = time()
+	charState.level = UnitLevel("player")
+
+	-- Keep the last valid snapshot if the client has not populated equipment
+	-- data yet. GetAverageItemLevel() can briefly return zero while loading.
+	local ilvl = select(2, GetAverageItemLevel())
+	if ilvl and ilvl > 0 then
+		charState.ilvl = ilvl
+	end
+
+	local minSlotIlvl = Constants.GetMinEquippedIlvl()
+	if minSlotIlvl and minSlotIlvl > 0 then
+		charState.minSlotIlvl = minSlotIlvl
+	end
 end
 
 function Database:GetCharState()

@@ -61,7 +61,7 @@ end
 
 function T:GetSummary(charState)
 	if not Constants.IsMidnightSeason2Active() then
-		return Constants.COLOR_GRAY .. "Unavailable" .. Constants.COLOR_RESET
+		return Constants.COLOR_GRAY .. "-" .. Constants.COLOR_RESET
 	end
 	local st = charState.trackers[self.id] or {}
 	if not st.max or st.max <= 0 then
