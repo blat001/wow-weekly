@@ -1,5 +1,5 @@
 local ADDON_NAME = "WoWWeekly"
-local ADDON_VERSION = "1.1.0"
+local ADDON_VERSION = "1.2.1"
 
 local Constants = {
 	ADDON_NAME = ADDON_NAME,
@@ -30,6 +30,7 @@ local Constants = {
 	TRACKER_METAQUEST = "metaquest",
 	TRACKER_TURNBACKSURGE = "turnbacksurge",
 	TRACKER_PURGINGVAULTS = "purgingvaults",
+	TRACKER_COILEDISLE_WORLDBOSS = "coiledisle_worldboss",
 	TRACKER_TIMEWALKING = "timewalking",
 
 	-- Delves (Great Vault world track)
@@ -215,6 +216,7 @@ local Constants = {
 
 	QUEST_TURN_BACK_SURGE = 96995,
 	QUEST_PURGING_VAULTS = 95520,
+	QUEST_COILED_ISLE_WORLD_BOSS = 93913,
 
 	-- Row groups for the tooltip, in display order. Each tracker declares a
 	-- `group` (matching an id below) and an `order` for sorting within it.

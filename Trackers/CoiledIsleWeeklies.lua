@@ -50,6 +50,8 @@ local trackers = {
 		Constants.QUEST_TURN_BACK_SURGE, 1),
 	CreateQuestTracker(Constants.TRACKER_PURGINGVAULTS, "Purging the Vaults",
 		Constants.QUEST_PURGING_VAULTS, 2),
+	CreateQuestTracker(Constants.TRACKER_COILEDISLE_WORLDBOSS, "World Boss",
+		Constants.QUEST_COILED_ISLE_WORLD_BOSS, 3),
 }
 
 for _, tracker in ipairs(trackers) do
