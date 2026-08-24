@@ -50,12 +50,21 @@ function WoWWeekly:GetDatabase()
 				nextWeeklyResetAt = 0,
 			},
 			profileOptions = {
-				minimap = { hide = false },
+				minimap = { hide = true },
+				minimapOptionInitialized = true,
 				enabledTrackers = {},
 				trackedChars = {},
 				sortKey = "name",
 			},
 		}
+	end
+	WoWWeeklyDB.profileOptions = WoWWeeklyDB.profileOptions or {}
+	-- Older releases stored a minimap placeholder even though no icon was
+	-- registered. Treat the first release with a working icon as opt-in.
+	if not WoWWeeklyDB.profileOptions.minimapOptionInitialized then
+		WoWWeeklyDB.profileOptions.minimap = WoWWeeklyDB.profileOptions.minimap or {}
+		WoWWeeklyDB.profileOptions.minimap.hide = true
+		WoWWeeklyDB.profileOptions.minimapOptionInitialized = true
 	end
 	return WoWWeeklyDB
 end

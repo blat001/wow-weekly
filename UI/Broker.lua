@@ -20,6 +20,21 @@ function Broker:Initialize()
             if Config and Config.Open then Config:Open() end
         end,
     })
+
+    local icon = LibStub("LibDBIcon-1.0", true)
+    if icon then
+        local options = WoWWeekly.db.profileOptions
+        options.minimap = options.minimap or { hide = true }
+        icon:Register(ADDON_NAME, self.ldb, options.minimap)
+        self.icon = icon
+    end
+end
+
+function Broker:SetMinimapShown(shown)
+    local options = WoWWeekly.db.profileOptions
+    options.minimap = options.minimap or {}
+    options.minimap.hide = not shown
+    if self.icon then self.icon:SetIcon(ADDON_NAME) end
 end
 
 function Broker:UpdateText()

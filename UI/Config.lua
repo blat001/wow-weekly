@@ -53,6 +53,16 @@ function Config:SetReadyCraftCrest(crestType)
 	WoWWeekly.db.profileOptions.readyCraftCrest = crestType == "hero" and "hero" or "myth"
 end
 
+function Config:IsMinimapIconShown()
+	local minimap = WoWWeekly.db and WoWWeekly.db.profileOptions and WoWWeekly.db.profileOptions.minimap
+	return minimap and minimap.hide == false
+end
+
+function Config:SetMinimapIconShown(shown)
+	local Broker = _G[ADDON_NAME .. "Broker"]
+	if Broker and Broker.SetMinimapShown then Broker:SetMinimapShown(shown) end
+end
+
 local function ClassColor(classFile)
 	return classFile and RAID_CLASS_COLORS and RAID_CLASS_COLORS[classFile]
 end
@@ -194,7 +204,7 @@ function Config:Refresh()
 		y = y - 24
 	end
 
-	-- One checkbox row. kind: "tracker" | "char" | "group" | "crest". For "group",
+	-- One checkbox row. kind: "tracker" | "char" | "group" | "crest" | "minimap". For "group",
 	-- childIds is the list of tracker IDs the master toggle controls.
 	local function addCheck(kind, key, text, color, checked, indent, childIds)
 		checkIdx = checkIdx + 1
@@ -206,6 +216,8 @@ function Config:Refresh()
 			cb:SetScript("OnClick", function(self)
 				if self.kind == "tracker" then
 					Config:SetTrackerEnabled(self.key, self:GetChecked())
+				elseif self.kind == "minimap" then
+					Config:SetMinimapIconShown(self:GetChecked())
 				elseif self.kind == "crest" then
 					Config:SetReadyCraftCrest(self.key)
 				elseif self.kind == "group" then
@@ -258,6 +270,11 @@ function Config:Refresh()
 
 		local GOLD = { r = 1, g = 0.82, b = 0 }
 		local byGroup, ungrouped = CollectTrackersByGroup()
+
+		addHeader("Display")
+		addCheck("minimap", "minimap", "Show minimap icon", nil, Config:IsMinimapIconShown())
+		y = y - 6
+		addHeader("Trackers")
 
 		-- One category per declared group, in display order: a master toggle for
 		-- the whole group, then its trackers indented beneath it.
