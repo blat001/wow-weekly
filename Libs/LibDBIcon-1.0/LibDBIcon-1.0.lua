@@ -15,6 +15,21 @@ function LibDBIcon:Unregister(name)
 	self.objects[name] = nil
 end
 
+function LibDBIcon:Show(name)
+	local obj = self.objects[name]
+	if not obj then return end
+	if obj.db then obj.db.hide = false end
+	self:SetIcon(name)
+end
+
+function LibDBIcon:Hide(name)
+	local obj = self.objects[name]
+	if not obj then return end
+	if obj.db then obj.db.hide = true end
+	local btn = _G["LibDBIcon_Button_" .. name]
+	if btn then btn:Hide() end
+end
+
 function LibDBIcon:SetIcon(name)
 	local obj = self.objects[name]
 	if not obj then return end

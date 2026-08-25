@@ -65,5 +65,12 @@ for _, difficulty in ipairs(DIFFICULTIES) do
 		return (st.progress or 0) >= Constants.CURRENT_RAID_BOSSES
 	end
 
+	-- A difficulty row is useful only after this character has killed a boss
+	-- on that difficulty during the current lockout.
+	function T:IsVisible(charState)
+		local st = charState.trackers[self.id] or {}
+		return (st.progress or 0) > 0
+	end
+
 	TrackerRegistry:Register(T)
 end

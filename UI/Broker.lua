@@ -13,11 +13,25 @@ function Broker:Initialize()
         label = "WoW Weekly",
         OnEnter = function(frame)
             local Tooltip = _G[ADDON_NAME .. "Tooltip"]
-            if Tooltip then Tooltip:Show(frame) end
+            local Config = _G[ADDON_NAME .. "Config"]
+            local limit = Config and Config.GetHoverCharacterLimit
+                and Config:GetHoverCharacterLimit() or 5
+            if Tooltip then Tooltip:Show(frame, false, limit) end
+        end,
+        OnLeave = function()
+            local Tooltip = _G[ADDON_NAME .. "Tooltip"]
+            if Tooltip and Tooltip.HideHover then Tooltip:HideHover() end
         end,
         OnClick = function(frame, button)
-            local Config = _G[ADDON_NAME .. "Config"]
-            if Config and Config.Open then Config:Open() end
+            if button == "RightButton" then
+                local Tooltip = _G[ADDON_NAME .. "Tooltip"]
+                if Tooltip then Tooltip:Hide() end
+                local Config = _G[ADDON_NAME .. "Config"]
+                if Config and Config.Open then Config:Open() end
+            else
+                local Tooltip = _G[ADDON_NAME .. "Tooltip"]
+                if Tooltip and Tooltip.ToggleWindow then Tooltip:ToggleWindow() end
+            end
         end,
     })
 
@@ -34,7 +48,17 @@ function Broker:SetMinimapShown(shown)
     local options = WoWWeekly.db.profileOptions
     options.minimap = options.minimap or {}
     options.minimap.hide = not shown
-    if self.icon then self.icon:SetIcon(ADDON_NAME) end
+    if not self.icon then return end
+    if shown and self.icon.Show then
+        self.icon:Show(ADDON_NAME)
+    elseif not shown and self.icon.Hide then
+        self.icon:Hide(ADDON_NAME)
+    elseif self.icon.Refresh then
+        self.icon:Refresh(ADDON_NAME, options.minimap)
+    elseif self.icon.SetIcon then
+        -- Compatibility with the bundled lightweight implementation.
+        self.icon:SetIcon(ADDON_NAME)
+    end
 end
 
 function Broker:UpdateText()

@@ -1,5 +1,5 @@
 local ADDON_NAME = "WoWWeekly"
-local ADDON_VERSION = "1.2.2"
+local ADDON_VERSION = "1.3.0"
 
 local Constants = {
 	ADDON_NAME = ADDON_NAME,
@@ -172,6 +172,7 @@ local Constants = {
 		93913,  -- World Boss
 		94457,  -- Battlegrounds
 		95842,  -- Void Assaults
+		98172,  -- Trailing Xal'atath (12.1 freeform weekly)
 		98232,  -- Midnight: Vaults of Atal'Utek (Coiled Isle)
 	},
 
@@ -192,31 +193,30 @@ local Constants = {
 		[93913] = "World Boss",
 		[94457] = "Battlegrounds",
 		[95842] = "Void Assaults",
+		[98172] = "Trailing Xal'atath",
 		[98232] = "Coiled Isle",
 	},
 
-	-- Timewalking weekend event weekly ("A <X> Path Through Time"). One per week
-	-- depending on the active Timewalking expansion; available only on TW weeks.
-	-- Midnight gave SOME of these new 93xxx IDs while others kept their old IDs,
-	-- so this is a mixed set of best-known IDs (matching is "any in log", so
-	-- extra/wrong IDs are harmless). Only Fel is in-game confirmed; verify the
-	-- rest with `/ww quests path` as each rotates in and correct as needed.
-	-- Sources: in-game + wowhead.com/quest=<id>.
+	-- Max-level Timewalking weekly quests ("A <X> Path Through Time"). Do not
+	-- include the similarly named "Journey Through Time" leveling quests: those
+	-- award the leveling goodie bag and are a different objective/reward track.
+	-- Midnight replaced the older expansion-era IDs with this current set.
 	TIMEWALKING_POOL = {
-		93614,  -- A Fel Path Through Time (Legion)    -- in-game confirmed
-		93608,  -- A Burning Path Through Time (TBC)   -- wowhead 12.0
-		93611,  -- A Shattered Path Through Time (Cata)-- wowhead 12.0
-		93612,  -- A Shrouded Path Through Time (MoP)  -- wowhead 12.0
-		93613,  -- A Savage Path Through Time (WoD)    -- wowhead 12.0
-		83274,  -- An Original Path Through Time (Classic) -- wowhead live/12.0.5
-		88805,  -- A Scarred Path Through Time (BfA)   -- wowhead, unconfirmed for 12.0
-		92649,  -- A Shadowed Path Through Time (SL)   -- wowhead, unconfirmed for 12.0
-		44166,  -- A Frozen Path Through Time (WotLK)  -- older, unconfirmed for 12.0
+		93607,  -- An Original Path Through Time (Classic)
+		93608,  -- A Burning Path Through Time (TBC)
+		93610,  -- A Frozen Path Through Time (WotLK)
+		93611,  -- A Shattered Path Through Time (Cataclysm)
+		93612,  -- A Shrouded Path Through Time (Mists of Pandaria)
+		93613,  -- A Savage Path Through Time (Warlords of Draenor)
+		93614,  -- A Fel Path Through Time (Legion)
+		93627,  -- A Scarred Path Through Time (Battle for Azeroth)
+		93628,  -- A Shadowed Path Through Time (Shadowlands)
+		93497,  -- A Soaring Path Through Time (Dragonflight)
 	},
 
 	QUEST_TURN_BACK_SURGE = 96995,
 	QUEST_PURGING_VAULTS = 95520,
-	QUEST_COILED_ISLE_WORLD_BOSS = 93913,
+	QUEST_COILED_ISLE_WORLD_BOSS = 97128, -- Lair: Nymrissa Wavecaller
 
 	-- Row groups for the tooltip, in display order. Each tracker declares a
 	-- `group` (matching an id below) and an `order` for sorting within it.

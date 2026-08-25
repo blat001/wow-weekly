@@ -6,6 +6,7 @@ local WeeklyReset = _G[ADDON_NAME .. "WeeklyReset"]
 local LibQTip = LibStub("LibQTip-1.0")
 
 local Tooltip = {}
+local WINDOW_PAGE_SIZE = 6
 
 -- Return a "|cAARRGGBB" color escape for a class, falling back to white.
 local function ClassColor(classFile)
@@ -28,7 +29,7 @@ end
 
 -- Build the column order: the character you're logged into is always first,
 -- followed by the other *tracked* characters (sorted by level/ilvl).
-local function OrderedCharKeys(db)
+local function OrderedCharKeys(db, maxCharacters)
     local Database = _G[ADDON_NAME .. "Database"]
     local Config   = _G[ADDON_NAME .. "Config"]
     local currentKey = Database and Database.charKey
@@ -41,20 +42,24 @@ local function OrderedCharKeys(db)
             if tracked then others[#others + 1] = k end
         end
     end
-    table.sort(others, function(a, b)
-        local A, B = db.chars[a], db.chars[b]
-        if (A.level or 0) ~= (B.level or 0) then return (A.level or 0) > (B.level or 0) end
-        if (A.ilvl or 0) ~= (B.ilvl or 0) then return (A.ilvl or 0) > (B.ilvl or 0) end
-        return a < b
-    end)
+    if Config and Config.SortCharacterKeys then
+        Config:SortCharacterKeys(others, db.chars)
+    else
+        table.sort(others)
+    end
 
     local keys = {}
     if currentKey and db.chars[currentKey] then keys[#keys + 1] = currentKey end  -- always first
     for _, k in ipairs(others) do keys[#keys + 1] = k end
+    local limit = tonumber(maxCharacters)
+    if limit and limit > 0 then
+        limit = math.floor(limit)
+        while #keys > limit do table.remove(keys) end
+    end
     return keys
 end
 
-function Tooltip:Show(anchorFrame)
+function Tooltip:Show(anchorFrame, persistent, maxCharacters)
     local db = WoWWeekly.db
     if not db or not db.chars then return end
 
@@ -75,8 +80,23 @@ function Tooltip:Show(anchorFrame)
     -- looted this session) is up to date whenever you open the grid.
     if TrackerRegistry and TrackerRegistry.ScanAll then TrackerRegistry:ScanAll() end
 
-    local charKeys = OrderedCharKeys(db)
-    if #charKeys == 0 then return end
+    local allCharKeys = OrderedCharKeys(db, maxCharacters)
+    if #allCharKeys == 0 then return end
+
+    local charKeys = allCharKeys
+    local pageCount = 1
+    if persistent and #allCharKeys > WINDOW_PAGE_SIZE then
+        -- Keep the logged-in character visible while paging through the alts.
+        local altsPerPage = WINDOW_PAGE_SIZE - 1
+        pageCount = math.ceil((#allCharKeys - 1) / altsPerPage)
+        self.page = math.max(1, math.min(pageCount, self.page or 1))
+        charKeys = { allCharKeys[1] }
+        local firstAlt = 2 + (self.page - 1) * altsPerPage
+        local lastAlt = math.min(#allCharKeys, firstAlt + altsPerPage - 1)
+        for i = firstAlt, lastAlt do charKeys[#charKeys + 1] = allCharKeys[i] end
+    else
+        self.page = 1
+    end
 
     local numCols = 1 + #charKeys
     if self.tip then LibQTip:Release(self.tip); self.tip = nil end
@@ -90,7 +110,18 @@ function Tooltip:Show(anchorFrame)
 
     -- Title row, centered across the whole table
     local titleLine = tip:AddHeader("")
-    tip:SetCell(titleLine, 1, Constants.COLOR_YELLOW .. "WoW Weekly" .. Constants.COLOR_RESET, nil, "CENTER", numCols)
+    if persistent then
+        tip:SetCell(titleLine, 1, Constants.COLOR_YELLOW .. "WoW Weekly" .. Constants.COLOR_RESET,
+            nil, "CENTER", numCols - 1)
+        tip:SetCell(titleLine, numCols, Constants.COLOR_WHITE .. "X" .. Constants.COLOR_RESET,
+            nil, "RIGHT")
+        tip:SetCellScript(titleLine, numCols, "OnMouseUp", function()
+            self:Hide()
+        end)
+    else
+        tip:SetCell(titleLine, 1, Constants.COLOR_YELLOW .. "WoW Weekly" .. Constants.COLOR_RESET,
+            nil, "CENTER", numCols)
+    end
     tip:AddSeparator(1, 1, 1, 1, 0.4)
 
     -- Column-header row: "Task" label + each character in class color
@@ -112,7 +143,17 @@ function Tooltip:Show(anchorFrame)
     for _, t in pairs(TrackerRegistry:GetAll()) do
         local enabled = true
         if Config and Config.IsTrackerEnabled then enabled = Config:IsTrackerEnabled(t.id) end
-        if enabled then
+        local visible = true
+        if t.IsVisible then
+            visible = false
+            for _, key in ipairs(charKeys) do
+                if t:IsVisible(db.chars[key]) then
+                    visible = true
+                    break
+                end
+            end
+        end
+        if enabled and visible then
             if t.group then
                 byGroup[t.group] = byGroup[t.group] or {}
                 byGroup[t.group][#byGroup[t.group] + 1] = t
@@ -389,6 +430,34 @@ function Tooltip:Show(anchorFrame)
     end
     renderGroup("Other", ungrouped)
 
+    if persistent and pageCount > 1 then
+        tip:AddSeparator(2, 1, 1, 1, 0.6)
+        local pager = tip:AddLine()
+        local previous = self.page > 1
+            and Constants.COLOR_WHITE .. "< Previous" .. Constants.COLOR_RESET
+            or Constants.COLOR_GRAY .. "< Previous" .. Constants.COLOR_RESET
+        local nextPage = self.page < pageCount
+            and Constants.COLOR_WHITE .. "Next >" .. Constants.COLOR_RESET
+            or Constants.COLOR_GRAY .. "Next >" .. Constants.COLOR_RESET
+        tip:SetCell(pager, 1, previous, nil, "LEFT")
+        tip:SetCell(pager, 2,
+            Constants.COLOR_YELLOW .. "Page " .. self.page .. " of " .. pageCount .. Constants.COLOR_RESET,
+            nil, "CENTER", numCols - 2)
+        tip:SetCell(pager, numCols, nextPage, nil, "RIGHT")
+        if self.page > 1 then
+            tip:SetCellScript(pager, 1, "OnMouseUp", function()
+                self.page = self.page - 1
+                self:Show(nil, true)
+            end)
+        end
+        if self.page < pageCount then
+            tip:SetCellScript(pager, numCols, "OnMouseUp", function()
+                self.page = self.page + 1
+                self:Show(nil, true)
+            end)
+        end
+    end
+
     -- Clickable footer that opens the tracked-characters config
     tip:AddSeparator(2, 1, 1, 1, 0.6)
     local footer = tip:AddLine()
@@ -396,17 +465,41 @@ function Tooltip:Show(anchorFrame)
         Constants.COLOR_GRAY .. "Click to choose tracked characters" .. Constants.COLOR_RESET,
         nil, "CENTER", numCols)
     tip:SetLineScript(footer, "OnMouseUp", function()
+        self:Hide()
         local Config = _G[ADDON_NAME .. "Config"]
         if Config and Config.Open then Config:Open() end
     end)
 
-    if anchorFrame then tip:SmartAnchorTo(anchorFrame) end
-    tip:SetAutoHideDelay(0.25, anchorFrame)
+    if persistent then
+        tip:ClearAllPoints()
+        tip:SetPoint("CENTER", UIParent, "CENTER")
+        tip:SetClampedToScreen(true)
+        tip:SetAutoHideDelay(nil)
+        self.windowOpen = true
+    else
+        if anchorFrame then tip:SmartAnchorTo(anchorFrame) end
+        tip:SetAutoHideDelay(0.25, anchorFrame)
+        self.windowOpen = false
+    end
     tip:Show()
+end
+
+function Tooltip:ToggleWindow()
+    if self.windowOpen and self.tip and self.tip:IsShown() then
+        self:Hide()
+    else
+        self.page = 1
+        self:Show(nil, true)
+    end
+end
+
+function Tooltip:HideHover()
+    if not self.windowOpen then self:Hide() end
 end
 
 function Tooltip:Hide()
     if self.tip then LibQTip:Release(self.tip); self.tip = nil end
+    self.windowOpen = false
 end
 
 _G[ADDON_NAME .. "Tooltip"] = Tooltip

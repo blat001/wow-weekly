@@ -1,29 +1,30 @@
 local ADDON_NAME = "WoWWeekly"
 local Constants = _G[ADDON_NAME .. "Constants"]
 
-local function RewardIlvl(activityID)
-	local getLinks = C_WeeklyRewards and C_WeeklyRewards.GetExampleRewardItemHyperlinks
-	local getIlvl = (C_Item and C_Item.GetDetailedItemLevelInfo) or GetDetailedItemLevelInfo
-	if not (activityID and getLinks and getIlvl) then return nil end
-	local results = { pcall(getLinks, activityID) }
-	if not results[1] then return nil end
+local function RewardIlvl(activity)
+	local getRewards = C_WeeklyRewards and C_WeeklyRewards.GetActivityRewards
+	if not (getRewards and activity.type and activity.index) then return nil end
+	local ok, rewards = pcall(getRewards, activity.type, activity.index)
+	if not ok or type(rewards) ~= "table" then return nil end
 	local best = 0
-	for i = 2, #results do
-		if type(results[i]) == "string" and results[i] ~= "" then
-			local ok, ilvl = pcall(getIlvl, results[i])
-			if ok and ilvl and ilvl > best then best = ilvl end
-		end
+	for _, reward in ipairs(rewards) do
+		best = math.max(best, tonumber(reward.itemLevel) or 0)
 	end
 	return best > 0 and best or nil
 end
 
 local function TrackForIlvl(ilvl)
-	if not ilvl then return nil end
 	if ilvl >= 318 then return "M" end
 	if ilvl >= 305 then return "H" end
 	if ilvl >= 292 then return "C" end
 	if ilvl >= 279 then return "V" end
 	return "A"
+end
+
+local function TrackForLevel(level)
+	if level >= 8 then return "H" end
+	if level >= 5 then return "C" end
+	return "V"
 end
 
 local function TrackColor(track)
@@ -65,7 +66,7 @@ function DelveTracker:Scan(charState)
 			slots[#slots + 1] = {
 				threshold = a.threshold or 0,
 				unlocked = (a.progress or 0) >= (a.threshold or 0),
-				ilvl = RewardIlvl(a.id),
+				ilvl = RewardIlvl(a),
 				level = a.level or 0,
 			}
 		end
@@ -73,12 +74,7 @@ function DelveTracker:Scan(charState)
 	end
 	table.sort(slots, function(a, b) return a.threshold < b.threshold end)
 	for _, slot in ipairs(slots) do
-		slot.track = TrackForIlvl(slot.ilvl)
-		if not slot.track then
-			if slot.level >= 8 then slot.track = "H"
-			elseif slot.level >= 5 then slot.track = "C"
-			else slot.track = "V" end
-		end
+		slot.track = slot.ilvl and TrackForIlvl(slot.ilvl) or TrackForLevel(slot.level)
 	end
 	st.count = count                 -- Tier 8+ slots filled (0/2/4/8)
 	st.rawProgress = rawProgress      -- total runs of any tier (for reference)

@@ -44,6 +44,7 @@ local T = {
 
 function T:Scan(charState)
 	local names = Constants.META_QUEST_NAMES
+	local previous = charState.trackers[self.id] or {}
 	local chosen
 	-- Several meta objectives can sit in the log at once, so do NOT just take the
 	-- first. Prefer the one the player is actively progressing (not finished,
@@ -53,9 +54,11 @@ function T:Scan(charState)
 		if IsOnLog(qid) then
 			local cur, max, fin = QuestProgress(qid)
 			local cand = {
+				qid = qid,
 				name = names[qid] or "Weekly",
 				cur = cur, max = max,
-				done = fin or C_QuestLog.IsQuestFlaggedCompleted(qid),
+				done = fin == true,
+				seenThisReset = true,
 			}
 			if not chosen then
 				chosen = cand
@@ -70,17 +73,17 @@ function T:Scan(charState)
 			end
 		end
 	end
-	-- Otherwise: the meta objectives are hidden credit quests (not in the log),
-	-- so if any is flagged complete the weekly is done, but we canNOT tell which
-	-- objective the player actually chose -- naming it would be misleading. Show
-	-- a generic "Done" in that case.
-	if not chosen then
-		for _, qid in ipairs(Constants.META_QUEST_POOL) do
-			if C_QuestLog.IsQuestFlaggedCompleted(qid) then
-				chosen = { done = true, generic = true }
-				break
-			end
-		end
+	-- After turn-in the quest leaves the log. Only trust its completion flag if
+	-- this addon observed that exact quest earlier in the current reset period;
+	-- IsQuestFlaggedCompleted can remain true from a previous week.
+	if not chosen and previous.seenThisReset and previous.qid
+		and C_QuestLog.IsQuestFlaggedCompleted(previous.qid) then
+		chosen = {
+			qid = previous.qid,
+			done = true,
+			generic = true,
+			seenThisReset = true,
+		}
 	end
 	chosen = chosen or { none = true }
 	chosen.lastUpdated = time()
@@ -113,6 +116,14 @@ function T:GetSummary(charState)
 		color = Constants.COLOR_RED
 	end
 	return color .. text .. Constants.COLOR_RESET
+end
+
+-- Do not reserve a row for the meta tracker on weeks/characters where none of
+-- the recognized weekly quests is available. The tooltip checks this across
+-- every displayed character, so one active or completed weekly shows the row.
+function T:IsVisible(charState)
+	local st = charState.trackers[self.id] or {}
+	return st.done == true or st.name ~= nil
 end
 
 function T:IsComplete(charState)

@@ -2,7 +2,7 @@
 ## Title: WoW Weekly Tracker
 ## Notes: Track completion of weekly tasks (Delves, Keyshards, Professions) across main + alts
 ## Author: Barry Latimer
-## Version: 1.2.2
+## Version: 1.3.0
 ## SavedVariables: WoWWeeklyDB
 ## OptionalDeps: Titan, !LibUIDropDownMenu
 ## X-Curse-Project-ID: 1567214

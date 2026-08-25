@@ -82,6 +82,14 @@ function T:GetSummary(charState)
 	return Constants.COLOR_GRAY .. "-" .. Constants.COLOR_RESET
 end
 
+-- Hide the entire row unless this character has one of the recognized
+-- max-level Timewalking weeklies in its log or completed this reset period.
+-- Tooltip rendering checks every displayed character, so one valid snapshot is
+-- enough to show the row for the warband.
+function T:IsVisible(charState)
+	return (charState.trackers[self.id] or {}).available == true
+end
+
 -- Only relevant on weeks a Timewalking event is running.
 function T:IsRelevant(charState)
 	return (charState.trackers[self.id] or {}).available == true

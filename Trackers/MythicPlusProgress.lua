@@ -47,6 +47,11 @@ function Weekly:GetSummary(charState)
 		.. Constants.COLOR_GRAY .. " · " .. st.runs .. " " .. noun .. Constants.COLOR_RESET
 end
 
+function Weekly:IsVisible(charState)
+	local st = charState.trackers[self.id] or {}
+	return (st.runs or 0) > 0
+end
+
 local Keystone = {
 	id = Constants.TRACKER_MPLUS_KEY,
 	label = "Keystone",
@@ -73,6 +78,13 @@ function Keystone:GetSummary(charState)
 	if (st.level or 0) <= 0 then return Constants.COLOR_GRAY .. "-" .. Constants.COLOR_RESET end
 	local suffix = st.mapName and (" " .. st.mapName) or ""
 	return Constants.COLOR_PURPLE .. "+" .. st.level .. suffix .. Constants.COLOR_RESET
+end
+
+-- Keep both Mythic+ detail rows together: owning a key alone does not make
+-- the section appear until the character has completed a run this week.
+function Keystone:IsVisible(charState)
+	local weekly = charState.trackers[Constants.TRACKER_MPLUS_WEEK] or {}
+	return (weekly.runs or 0) > 0
 end
 
 TrackerRegistry:Register(Weekly)
