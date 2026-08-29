@@ -292,6 +292,7 @@ function Tooltip:Show(anchorFrame, persistent, maxCharacters)
     for _, key in ipairs(charKeys) do
         local c = db.chars[key]
         local best
+        local bestDelveOrDungeon
         local raidPlan
         for _, t in pairs(TrackerRegistry:GetAll()) do
             if showRaidPlan and t.id == Constants.TRACKER_RAID then
@@ -327,12 +328,40 @@ function Tooltip:Show(anchorFrame, persistent, maxCharacters)
                         best = {
                             score = score,
                             order = t.order or 999,
+                            id = t.id,
+                            activity = activity,
                             text = (t.GetAction and t:GetAction(c)) or t.label,
                         }
                     end
+					if activity == "delves" or activity == "mplus" then
+						if not bestDelveOrDungeon or score > bestDelveOrDungeon.score
+							or (score == bestDelveOrDungeon.score
+								and (t.order or 999) < (bestDelveOrDungeon.order or 999)) then
+							bestDelveOrDungeon = {
+								score = score,
+								order = t.order or 999,
+								id = t.id,
+								activity = activity,
+								text = (t.GetAction and t:GetAction(c)) or t.label,
+							}
+						end
+					end
                 end
             end
         end
+		local meta = c.trackers[Constants.TRACKER_METAQUEST] or {}
+		local trailing = not meta.done
+			and (meta.qid == 98172 or meta.name == "Trailing Xal'atath")
+		if trailing and best and best.id == Constants.TRACKER_METAQUEST
+			and bestDelveOrDungeon then
+			best = bestDelveOrDungeon
+		end
+		if trailing and best and (best.activity == "delves" or best.activity == "mplus") then
+			local remaining = meta.cur and meta.max
+				and math.max(0, meta.max - meta.cur) or 100
+			best.text = string.format("%s; collect Fading Voidwhispers along the way (%d remaining)",
+				best.text, remaining)
+		end
         recs[#recs + 1] = {
             name = c.name or key,
             classFile = c.classFile,

@@ -133,6 +133,11 @@ end
 function T:GetAction(charState)
 	local st = charState.trackers[self.id] or {}
 	local name = st.name or "meta"
+	if st.qid == 98172 or name == "Trailing Xal'atath" then
+		local remaining = st.cur and st.max and math.max(0, st.max - st.cur) or 100
+		return string.format("Run a Delve or dungeon to collect %d more Fading Voidwhispers",
+			remaining)
+	end
 	if st.cur and st.max then
 		local remaining = math.max(0, st.max - st.cur)
 		return string.format("Finish the %s weekly quest (%d remaining)", name, remaining)

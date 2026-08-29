@@ -1,5 +1,5 @@
 local ADDON_NAME = "WoWWeekly"
-local ADDON_VERSION = "1.4.0"
+local ADDON_VERSION = "1.4.1"
 
 local Constants = {
 	ADDON_NAME = ADDON_NAME,
