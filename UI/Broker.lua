@@ -1,6 +1,5 @@
 local ADDON_NAME = "WoWWeekly"
 local WoWWeekly  = _G[ADDON_NAME]
-local Constants  = _G[ADDON_NAME .. "Constants"]
 
 local Broker = {}
 
@@ -63,15 +62,9 @@ end
 
 function Broker:UpdateText()
     if not self.ldb then return end
-    local Database = _G[ADDON_NAME .. "Database"]
-    local charState = Database and Database:GetCharState()
-    if not charState then return end
-
-    local TrackerRegistry = _G[ADDON_NAME .. "TrackerRegistry"]
-    local delves = TrackerRegistry:GetTracker(Constants.TRACKER_DELVES)
-    if delves then
-        self.ldb.text = "Delves " .. delves:GetSummary(charState)
-    end
+    -- Broker/Titan is the launcher, not another status row. Keep its display
+    -- stable and let the tooltip carry all character progress details.
+    self.ldb.text = "WoW Weekly"
 end
 
 _G[ADDON_NAME .. "Broker"] = Broker

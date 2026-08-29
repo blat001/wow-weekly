@@ -105,9 +105,11 @@ end
 function T:GetAction(charState)
 	local st = charState.trackers[self.id] or {}
 	if st.cur and st.max and not st.done then
-		return string.format("Timewalking (%d/%d)", st.cur, st.max)
+		local remaining = math.max(0, st.max - st.cur)
+		local noun = remaining == 1 and "dungeon" or "dungeons"
+		return string.format("Complete %d more Timewalking %s", remaining, noun)
 	end
-	return "Timewalking"
+	return "Complete the Timewalking weekly quest"
 end
 
 _G[ADDON_NAME .. "TimewalkingTracker"] = T

@@ -141,6 +141,9 @@ end
 function T:GetAction(charState)
 	local st = charState.trackers[self.id] or {}
 	local active = Constants.IsMidnightSeason2Active()
+	if active and (st.qualifiedRuns or 0) == 0 then
+		return "1 more Mythic+ run for next Vault slot"
+	end
 	local runs = active and (st.qualifiedRuns or 0) or (st.rawProgress or 0)
 	local nextThreshold
 	for _, threshold in ipairs({ 1, 4, 8 }) do

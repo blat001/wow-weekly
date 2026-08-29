@@ -405,6 +405,25 @@ function WoWWeekly:RegisterEvents()
 	self:RegisterEvent("PLAYER_LOGIN", "OnPlayerLogin")
 	self:RegisterEvent("PLAYER_LOGOUT", "OnPlayerLogout")
 	self:RegisterEvent("TIME_PLAYED_MSG", "OnTimePlayed")
+	self:RegisterEvent("WEEKLY_REWARDS_UPDATE", "OnWeeklyRewardsUpdate")
+end
+
+function WoWWeekly:OnWeeklyRewardsUpdate()
+	local TrackerRegistry = _G[ADDON_NAME .. "TrackerRegistry"]
+	local Database = _G[ADDON_NAME .. "Database"]
+	local charState = Database and Database:GetCharState()
+	if not (TrackerRegistry and charState) then return end
+
+	-- Refresh only the trackers backed by C_WeeklyRewards.  The event may fire
+	-- several times as Blizzard populates the activity rows.
+	for _, trackerId in ipairs({
+		Constants.TRACKER_DELVES,
+		Constants.TRACKER_MYTHICPLUS,
+		Constants.TRACKER_RAID,
+	}) do
+		local tracker = TrackerRegistry:GetTracker(trackerId)
+		if tracker and tracker.Scan then tracker:Scan(charState) end
+	end
 end
 
 function WoWWeekly:OnPlayerLogin()

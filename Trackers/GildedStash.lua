@@ -94,7 +94,10 @@ end
 
 function T:GetAction(charState)
 	local st = charState.trackers[self.id] or {}
-	return string.format("Gilded Stash (%d/%d)", st.looted or 0, st.max or 0)
+	local remaining = math.max(0, (st.max or 0) - (st.looted or 0))
+	local noun = remaining == 1 and "Delve" or "Delves"
+	return string.format("Complete %d more Tier 11 Bountiful %s for the Gilded Stash",
+		remaining, noun)
 end
 
 _G[ADDON_NAME .. "GildedStashTracker"] = T

@@ -57,10 +57,15 @@ function DelveTracker:Scan(charState)
 	local slots = {}
 	local ok, activities = pcall(C_WeeklyRewards.GetActivities,
 	                             Enum.WeeklyRewardChestThresholdType.World)
-	if ok and activities then
+	-- GetActivities can briefly return an empty table while Weekly Rewards data is
+	-- still loading (notably just after login/zone changes).  An empty result is
+	-- not a valid zero-progress snapshot: replacing the saved slots here makes a
+	-- character with completed delves appear to have no Great Vault credit.
+	if ok and type(activities) == "table" and #activities > 0 then
 		for _, a in ipairs(activities) do
 			if (a.progress or 0) > rawProgress then rawProgress = a.progress end
-			if (a.level or 0) >= Constants.DELVE_MIN_TIER then
+			if (a.progress or 0) >= (a.threshold or 0)
+				and (a.level or 0) >= Constants.DELVE_MIN_TIER then
 				if (a.threshold or 0) > count then count = a.threshold end
 			end
 			slots[#slots + 1] = {
@@ -71,17 +76,18 @@ function DelveTracker:Scan(charState)
 			}
 		end
 		st.rewardIlvl = Constants.MaxRewardIlvl(activities)  -- Hero-track ceiling
+		table.sort(slots, function(a, b) return a.threshold < b.threshold end)
+		for _, slot in ipairs(slots) do
+			slot.track = slot.ilvl and TrackForIlvl(slot.ilvl) or TrackForLevel(slot.level)
+		end
+		st.count = count                 -- Tier 8+ slots filled (0/2/4/8)
+		st.rawProgress = rawProgress      -- total runs of any tier (for reference)
+		st.slots = slots
+		st.lastUpdated = time()
+		if rawProgress > 0 then Constants.RecordActivity(charState, "delves") end
 	end
-	table.sort(slots, function(a, b) return a.threshold < b.threshold end)
-	for _, slot in ipairs(slots) do
-		slot.track = slot.ilvl and TrackForIlvl(slot.ilvl) or TrackForLevel(slot.level)
-	end
-	st.count = count                 -- Tier 8+ slots filled (0/2/4/8)
-	st.rawProgress = rawProgress      -- total runs of any tier (for reference)
-	st.slots = slots
-	st.lastUpdated = time()
+	-- Preserve the last valid snapshot when the API is unavailable/not ready.
 	charState.trackers[self.id] = st
-	if rawProgress > 0 then Constants.RecordActivity(charState, "delves") end
 end
 
 function DelveTracker:GetSummary(charState)
@@ -111,8 +117,25 @@ end
 
 function DelveTracker:GetAction(charState)
 	local st = charState.trackers[self.id] or {}
-	local n = Constants.IsMidnightSeason2Active() and (st.count or 0) or (st.rawProgress or 0)
-	return string.format("Delves vault (%d/%d)", n, Constants.DELVE_HERO_THRESHOLD)
+	local gilded = charState.trackers[Constants.TRACKER_GILDEDSTASH] or {}
+	local Config = _G[ADDON_NAME .. "Config"]
+	local maxTier = Config and Config.GetMaxDelveTier and Config:GetMaxDelveTier() or 11
+	local needsGilded = gilded.max ~= nil and gilded.max > 0
+		and (gilded.looted or 0) < gilded.max and maxTier >= 11
+	if Constants.IsMidnightSeason2Active() and needsGilded then
+		return "Complete a Tier 11 Bountiful Delve for Gilded Stash and Hero Vault progress"
+	end
+	local progress = Constants.IsMidnightSeason2Active() and (st.count or 0) or (st.rawProgress or 0)
+	local nextThreshold
+	for _, threshold in ipairs({ 2, 4, 8 }) do
+		if progress < threshold then nextThreshold = threshold break end
+	end
+	if not nextThreshold then return "Delve Great Vault complete" end
+	local remaining = nextThreshold - progress
+	local noun = remaining == 1 and "Delve" or "Delves"
+	local tier = Constants.IsMidnightSeason2Active() and "Tier 8 " or ""
+	return string.format("Complete %d more %s%s for the next Vault slot",
+		remaining, tier, noun)
 end
 
 _G[ADDON_NAME .. "DelveTracker"] = DelveTracker

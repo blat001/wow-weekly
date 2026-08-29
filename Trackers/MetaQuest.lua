@@ -132,7 +132,12 @@ end
 
 function T:GetAction(charState)
 	local st = charState.trackers[self.id] or {}
-	return describe(st) or "Weekly meta quest"
+	local name = st.name or "meta"
+	if st.cur and st.max then
+		local remaining = math.max(0, st.max - st.cur)
+		return string.format("Finish the %s weekly quest (%d remaining)", name, remaining)
+	end
+	return string.format("Finish the %s weekly quest", name)
 end
 
 _G[ADDON_NAME .. "MetaQuestTracker"] = T

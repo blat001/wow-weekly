@@ -4,6 +4,115 @@ local Constants  = _G[ADDON_NAME .. "Constants"]
 
 local Config = {}
 
+local RECOMMENDATIONS = {
+	{ key = Constants.TRACKER_BOUNTYMAP, label = "Bounty Map", ids = { Constants.TRACKER_BOUNTYMAP } },
+	{ key = Constants.TRACKER_METAQUEST, label = "Weekly Meta Quest", ids = { Constants.TRACKER_METAQUEST } },
+	{ key = Constants.TRACKER_GILDEDSTASH, label = "Gilded Stash", ids = { Constants.TRACKER_GILDEDSTASH } },
+	{ key = Constants.TRACKER_DELVES, label = "Delves / World Vault", ids = { Constants.TRACKER_DELVES } },
+	{ key = Constants.TRACKER_TIMEWALKING, label = "Timewalking", ids = { Constants.TRACKER_TIMEWALKING } },
+	{ key = Constants.TRACKER_MYTHICPLUS, label = "Mythic+", ids = { Constants.TRACKER_MYTHICPLUS } },
+	{ key = Constants.TRACKER_COILEDISLE_WORLDBOSS, label = "Coiled Isle World Boss", ids = { Constants.TRACKER_COILEDISLE_WORLDBOSS } },
+	{ key = "professions", label = "Professions", ids = { Constants.TRACKER_PROFESSION1, Constants.TRACKER_PROFESSION2 } },
+	{ key = Constants.TRACKER_TURNBACKSURGE, label = "Turn Back the Surge", ids = { Constants.TRACKER_TURNBACKSURGE } },
+}
+
+local function RecommendationKey(trackerId)
+	if trackerId == Constants.TRACKER_PROFESSION1 or trackerId == Constants.TRACKER_PROFESSION2 then
+		return "professions"
+	end
+	return trackerId
+end
+
+function Config:IsGamePlanShown()
+	local po = WoWWeekly.db and WoWWeekly.db.profileOptions
+	return not po or po.gamePlanEnabled ~= false
+end
+
+function Config:IsNextStepShown()
+	local po = WoWWeekly.db and WoWWeekly.db.profileOptions
+	return not po or po.nextStepEnabled ~= false
+end
+
+function Config:IsRaidPlanShown()
+	local po = WoWWeekly.db and WoWWeekly.db.profileOptions
+	return not po or po.raidPlanEnabled ~= false
+end
+
+function Config:SetPlanOption(key, value)
+	WoWWeekly.db.profileOptions[key] = value and true or false
+end
+
+function Config:GetMaxDelveTier()
+	local po = WoWWeekly.db and WoWWeekly.db.profileOptions
+	return math.max(8, math.min(11, math.floor(tonumber(po and po.maxDelveTier) or 11)))
+end
+
+function Config:SetMaxDelveTier(value)
+	WoWWeekly.db.profileOptions.maxDelveTier = math.max(8, math.min(11,
+		math.floor(tonumber(value) or 11)))
+end
+
+function Config:IsRecommendationEnabled(trackerId)
+	local po = WoWWeekly.db and WoWWeekly.db.profileOptions
+	local enabled = po and po.enabledRecommendations
+	return not enabled or enabled[RecommendationKey(trackerId)] ~= false
+end
+
+function Config:SetRecommendationEnabled(key, value)
+	local po = WoWWeekly.db.profileOptions
+	po.enabledRecommendations = po.enabledRecommendations or {}
+	po.enabledRecommendations[key] = value and true or false
+end
+
+function Config:SetAllRecommendations(value)
+	for _, item in ipairs(RECOMMENDATIONS) do
+		self:SetRecommendationEnabled(item.key, value)
+	end
+end
+
+function Config:GetRecommendationOrder()
+	local po = WoWWeekly.db.profileOptions
+	local saved = po.recommendationOrder or {}
+	local valid, order = {}, {}
+	for _, item in ipairs(RECOMMENDATIONS) do valid[item.key] = true end
+	for _, key in ipairs(saved) do
+		if valid[key] then order[#order + 1] = key; valid[key] = nil end
+	end
+	for _, item in ipairs(RECOMMENDATIONS) do
+		if valid[item.key] then order[#order + 1] = item.key end
+	end
+	return order
+end
+
+function Config:GetRecommendationRank(trackerId)
+	local wanted = RecommendationKey(trackerId)
+	for rank, key in ipairs(self:GetRecommendationOrder()) do
+		if key == wanted then return rank end
+	end
+	return 999
+end
+
+function Config:MoveRecommendation(key, direction)
+	local order = self:GetRecommendationOrder()
+	for i, current in ipairs(order) do
+		if current == key then
+			local target = i + direction
+			if target >= 1 and target <= #order then
+				order[i], order[target] = order[target], order[i]
+			end
+			break
+		end
+	end
+	WoWWeekly.db.profileOptions.recommendationOrder = order
+end
+
+function Config:ResetGamePlanDefaults()
+	local po = WoWWeekly.db.profileOptions
+	po.gamePlanEnabled, po.nextStepEnabled, po.raidPlanEnabled = true, true, true
+	po.maxDelveTier = 11
+	po.enabledRecommendations, po.recommendationOrder = {}, nil
+end
+
 -- A character is tracked unless explicitly unticked (default = true).
 function Config:IsTracked(charKey)
 	local t = WoWWeekly.db and WoWWeekly.db.profileOptions and WoWWeekly.db.profileOptions.trackedChars
@@ -156,7 +265,7 @@ function Config:Initialize()
 	hint:SetTextColor(0.72, 0.72, 0.72)
 	panel.hint = hint
 
-	-- Tab bar: Tracking | Characters
+	-- Tab bar: Tracking | Game Plan | Characters
 	local function makeTab(text, key, anchor)
 		local b = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
 		b:SetSize(132, 26)
@@ -173,14 +282,17 @@ function Config:Initialize()
 		return b
 	end
 	panel.tabTracking = makeTab("Tracking", "tracking", nil)
-	panel.tabChars    = makeTab("Characters", "chars", panel.tabTracking)
+	panel.tabPlan     = makeTab("Game Plan", "gameplan", panel.tabTracking)
+	panel.tabChars    = makeTab("Characters", "chars", panel.tabPlan)
 
 	-- Bottom action buttons (relabeled per active tab)
 	local btnAll = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
 	btnAll:SetSize(120, 22)
 	btnAll:SetPoint("BOTTOMLEFT", 16, 16)
 	btnAll:SetScript("OnClick", function()
-		if Config.activeTab == "chars" then Config:SetAll(true) else Config:SetAllTrackers(true) end
+		if Config.activeTab == "chars" then Config:SetAll(true)
+		elseif Config.activeTab == "gameplan" then Config:SetAllRecommendations(true)
+		else Config:SetAllTrackers(true) end
 		Config:Refresh()
 	end)
 	panel.btnAll = btnAll
@@ -189,10 +301,22 @@ function Config:Initialize()
 	btnNone:SetSize(120, 22)
 	btnNone:SetPoint("LEFT", btnAll, "RIGHT", 8, 0)
 	btnNone:SetScript("OnClick", function()
-		if Config.activeTab == "chars" then Config:SetAll(false) else Config:SetAllTrackers(false) end
+		if Config.activeTab == "chars" then Config:SetAll(false)
+		elseif Config.activeTab == "gameplan" then Config:SetAllRecommendations(false)
+		else Config:SetAllTrackers(false) end
 		Config:Refresh()
 	end)
 	panel.btnNone = btnNone
+
+	local btnReset = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+	btnReset:SetSize(140, 22)
+	btnReset:SetPoint("LEFT", btnNone, "RIGHT", 8, 0)
+	btnReset:SetText("Restore Defaults")
+	btnReset:SetScript("OnClick", function()
+		Config:ResetGamePlanDefaults()
+		Config:Refresh()
+	end)
+	panel.btnReset = btnReset
 
 	-- Scrollable content area
 	local scroll = CreateFrame("ScrollFrame", "WoWWeeklyConfigScroll", panel, "UIPanelScrollFrameTemplate")
@@ -207,6 +331,7 @@ function Config:Initialize()
 	panel.sliders = {}
 	panel.cards = {}
 	panel.choiceRows = {}
+	panel.priorityRows = {}
 
 	panel:SetScript("OnShow", function() Config:Refresh() end)
 
@@ -237,9 +362,11 @@ function Config:Refresh()
 	for _, slider in ipairs(panel.sliders) do slider:Hide() end
 	for _, card in ipairs(panel.cards) do card:Hide() end
 	for _, row in ipairs(panel.choiceRows) do row:Hide() end
+	for _, row in ipairs(panel.priorityRows) do row:Hide() end
+	if panel.planExplanation then panel.planExplanation:Hide() end
 
 	local y = -4
-	local checkIdx, hdrIdx, sliderIdx, cardIdx, choiceIdx = 0, 0, 0, 0, 0
+	local checkIdx, hdrIdx, sliderIdx, cardIdx, choiceIdx, priorityIdx = 0, 0, 0, 0, 0, 0
 
 	-- Soft-backed cards turn related controls into visual sections instead of
 	-- one uninterrupted list. Cards are laid out after their contents so their
@@ -307,6 +434,10 @@ function Config:Refresh()
 			cb:SetScript("OnClick", function(self)
 				if self.kind == "tracker" then
 					Config:SetTrackerEnabled(self.key, self:GetChecked())
+				elseif self.kind == "planoption" then
+					Config:SetPlanOption(self.key, self:GetChecked())
+				elseif self.kind == "recommendation" then
+					Config:SetRecommendationEnabled(self.key, self:GetChecked())
 				elseif self.kind == "minimap" then
 					Config:SetMinimapIconShown(self:GetChecked())
 				elseif self.kind == "crest" then
@@ -337,6 +468,45 @@ function Config:Refresh()
 		y = y - 26
 	end
 
+	local function addPriorityRow(rank, item, enabled, canUp, canDown)
+		priorityIdx = priorityIdx + 1
+		local row = panel.priorityRows[priorityIdx]
+		if not row then
+			row = CreateFrame("Frame", nil, child)
+			row.bg = row:CreateTexture(nil, "BACKGROUND")
+			row.bg:SetAllPoints()
+			row.check = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+			row.check:SetPoint("LEFT", 34, 0)
+			row.check:SetScript("OnClick", function(self)
+				Config:SetRecommendationEnabled(self.key, self:GetChecked())
+				Config:Refresh()
+			end)
+			row.rank = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+			row.rank:SetPoint("LEFT", 12, 0)
+			row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+			row.label:SetPoint("LEFT", row.check, "RIGHT", 4, 0)
+			row.up = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+			row.up:SetSize(48, 22); row.up:SetPoint("RIGHT", -62, 0); row.up:SetText("Up")
+			row.down = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+			row.down:SetSize(48, 22); row.down:SetPoint("LEFT", row.up, "RIGHT", 4, 0); row.down:SetText("Down")
+			row.up:SetScript("OnClick", function(self)
+				Config:MoveRecommendation(self.key, -1); Config:Refresh()
+			end)
+			row.down:SetScript("OnClick", function(self)
+				Config:MoveRecommendation(self.key, 1); Config:Refresh()
+			end)
+			panel.priorityRows[priorityIdx] = row
+		end
+		row:ClearAllPoints(); row:SetPoint("TOPLEFT", child, "TOPLEFT", 6, y); row:SetSize(506, 28)
+		row.bg:SetColorTexture(1, 1, 1, rank % 2 == 0 and 0.035 or 0.015)
+		row.rank:SetText(rank .. ".")
+		row.label:SetText(item.label)
+		row.check.key = item.key; row.check:SetChecked(enabled)
+		row.up.key, row.down.key = item.key, item.key
+		row.up:SetEnabled(canUp); row.down:SetEnabled(canDown)
+		row:Show(); y = y - 30
+	end
+
 	local function addSlider(text, value, minValue, maxValue, onChanged)
 		sliderIdx = sliderIdx + 1
 		local slider = panel.sliders[sliderIdx]
@@ -346,8 +516,6 @@ function Config:Refresh()
 			slider:SetWidth(260)
 			slider:SetObeyStepOnDrag(true)
 			slider:SetValueStep(1)
-			_G[name .. "Low"]:SetText(minValue)
-			_G[name .. "High"]:SetText(maxValue)
 			slider:SetScript("OnValueChanged", function(self, newValue)
 				newValue = math.floor(newValue + 0.5)
 				_G[self:GetName() .. "Text"]:SetText(self.label .. ": " .. newValue)
@@ -358,6 +526,8 @@ function Config:Refresh()
 		slider:ClearAllPoints()
 		slider:SetPoint("TOPLEFT", 12, y - 8)
 		slider:SetMinMaxValues(minValue, maxValue)
+		_G[slider:GetName() .. "Low"]:SetText(minValue)
+		_G[slider:GetName() .. "High"]:SetText(maxValue)
 		slider.label = text
 		slider.onChanged = onChanged
 		slider.refreshing = true
@@ -410,7 +580,42 @@ function Config:Refresh()
 		y = y - 52
 	end
 
-	if self.activeTab == "chars" then
+	panel.btnReset:SetShown(self.activeTab == "gameplan")
+	if self.activeTab == "gameplan" then
+		panel.hint:SetText("Shape the guidance without hiding useful tracker rows. Higher activities win whenever they are available.")
+		panel.btnAll:SetText("Enable All")
+		panel.btnNone:SetText("Disable All")
+
+		local displayCard, displayTop = beginCard()
+		addHeader("Game Plan display", { r = 1, g = 0.82, b = 0 })
+		addCheck("planoption", "gamePlanEnabled", "Show Weekly Game Plan", nil, Config:IsGamePlanShown())
+		addCheck("planoption", "nextStepEnabled", "Show Next Step recommendations", nil, Config:IsNextStepShown(), 18)
+		addCheck("planoption", "raidPlanEnabled", "Show Raid Plan column", nil, Config:IsRaidPlanShown(), 18)
+		y = y - 14
+		addSlider("Maximum Delve tier", Config:GetMaxDelveTier(), 8, 11,
+			function(value) Config:SetMaxDelveTier(value) end)
+		endCard(displayCard, displayTop)
+
+		local priorityCard, priorityTop = beginCard()
+		addHeader("Next Step priority", { r = 1, g = 0.82, b = 0 })
+		local explanation = panel.planExplanation or child:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		panel.planExplanation = explanation
+		explanation:ClearAllPoints()
+		explanation:SetPoint("TOPLEFT", child, "TOPLEFT", 12, y)
+		explanation:SetWidth(480); explanation:SetJustifyH("LEFT")
+		explanation:SetText("Untick an activity to keep it in the tracker grid but exclude it from recommendations. Use the arrows to set priority.")
+		explanation:SetTextColor(0.65, 0.65, 0.7)
+		explanation:Show()
+		y = y - 34
+		local byKey = {}
+		for _, item in ipairs(RECOMMENDATIONS) do byKey[item.key] = item end
+		local order = Config:GetRecommendationOrder()
+		for rank, key in ipairs(order) do
+			local item = byKey[key]
+			addPriorityRow(rank, item, Config:IsRecommendationEnabled(key), rank > 1, rank < #order)
+		end
+		endCard(priorityCard, priorityTop)
+	elseif self.activeTab == "chars" then
 		panel.hint:SetText("Choose your hover size and which characters belong in the overview. Your current character always appears first.")
 		panel.btnAll:SetText("Track All")
 		panel.btnNone:SetText("Track None")
@@ -488,10 +693,13 @@ function Config:Refresh()
 	child:SetHeight(math.max(10, -y + 8))
 
 	-- Reflect the active tab on the tab buttons (locked-down = selected).
-	local active, inactive = panel.tabTracking, panel.tabChars
-	if self.activeTab == "chars" then active, inactive = panel.tabChars, panel.tabTracking end
-	active:SetButtonState("PUSHED", true); active:LockHighlight()
-	inactive:SetButtonState("NORMAL", false); inactive:UnlockHighlight()
+	for key, button in pairs({ tracking = panel.tabTracking, gameplan = panel.tabPlan, chars = panel.tabChars }) do
+		if key == self.activeTab then
+			button:SetButtonState("PUSHED", true); button:LockHighlight()
+		else
+			button:SetButtonState("NORMAL", false); button:UnlockHighlight()
+		end
+	end
 end
 
 -- Open straight to our panel in the Settings UI.

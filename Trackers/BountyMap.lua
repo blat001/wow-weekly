@@ -84,7 +84,17 @@ end
 
 function T:GetAction(charState)
 	local s = (charState.trackers[self.id] or {}).state
-	if s == "inbags" then return "T8+ Delve with your Map for Hero gear" end
+	if s == "inbags" then
+		local gilded = charState.trackers[Constants.TRACKER_GILDEDSTASH] or {}
+		local Config = _G[ADDON_NAME .. "Config"]
+		local maxTier = Config and Config.GetMaxDelveTier and Config:GetMaxDelveTier() or 11
+		local needsGilded = gilded.max ~= nil and gilded.max > 0
+			and (gilded.looted or 0) < gilded.max and maxTier >= 11
+		if Constants.IsMidnightSeason2Active() and needsGilded then
+			return "Use your Map in a Tier 11 Bountiful Delve for Hero gear and Gilded Stash progress"
+		end
+		return "Use your Map in a Tier 8 Delve for Hero gear"
+	end
 	return "Complete Purging the Vaults for a Bounty Map"
 end
 

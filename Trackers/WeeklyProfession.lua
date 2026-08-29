@@ -110,10 +110,14 @@ local function MakeProfessionTracker(slot, trackerId, label, order)
 		local st = charState.trackers[self.id] or {}
 		local nm = st.name or "Profession"
 		local parts = {}
-		if st.weeklyDone == false   then parts[#parts + 1] = "weekly" end
-		if st.treatiseDone == false then parts[#parts + 1] = "treatise" end
-		if #parts == 0 then return nm end
-		return nm .. " " .. table.concat(parts, "+")
+		if st.weeklyDone == false then
+			parts[#parts + 1] = "complete the weekly quest"
+		end
+		if st.treatiseDone == false then
+			parts[#parts + 1] = "use a treatise"
+		end
+		if #parts == 0 then return "Finish " .. nm .. " knowledge tasks" end
+		return nm .. ": " .. table.concat(parts, " and ")
 	end
 
 	return T

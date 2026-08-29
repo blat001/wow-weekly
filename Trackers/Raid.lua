@@ -44,6 +44,14 @@ local function RaidDifficultyRank(level)
 	return level or 0
 end
 
+local function RaidDifficultyName(level)
+	if level == 16 or level == 4 then return "Mythic" end
+	if level == 15 or level == 3 then return "Heroic" end
+	if level == 14 or level == 2 then return "Normal" end
+	if level == 17 or level == 1 then return "Raid Finder" end
+	return nil
+end
+
 local T = {
 	id = Constants.TRACKER_RAID,
 	label = "Raid",
@@ -64,16 +72,22 @@ function T:Scan(charState)
 	-- `progress` = bosses killed this week, `threshold` = bosses needed for that slot.
 	-- Report the highest slot threshold (2/4/6) whose run requirement is met.
 	local count = 0
+	local rawProgress = 0
 	local hasKills = false
 	local highestLevel = 0
+	local highestDifficulty
 	local slots = {}
 	local ok, activities = pcall(C_WeeklyRewards.GetActivities,
 	                             Enum.WeeklyRewardChestThresholdType.Raid)
 	if ok and activities then
 		for _, a in ipairs(activities) do
 			if (a.progress or 0) > 0 then hasKills = true end
+			if (a.progress or 0) > rawProgress then rawProgress = a.progress end
 			local difficultyRank = RaidDifficultyRank(a.level)
-			if (a.progress or 0) > 0 and difficultyRank > highestLevel then highestLevel = difficultyRank end
+			if (a.progress or 0) > 0 and difficultyRank > highestLevel then
+				highestLevel = difficultyRank
+				highestDifficulty = RaidDifficultyName(a.level)
+			end
 			if (a.progress or 0) >= (a.threshold or 0) and (a.threshold or 0) > count then
 				count = a.threshold
 			end
@@ -92,7 +106,9 @@ function T:Scan(charState)
 	end
 
 	st.count = count
+	st.rawProgress = rawProgress
 	st.hasKills = hasKills
+	st.highestDifficulty = highestDifficulty
 	st.slots = slots
 	st.lastUpdated = time()
 	charState.trackers[self.id] = st
@@ -131,7 +147,27 @@ end
 
 function T:GetAction(charState)
 	local st = charState.trackers[self.id] or {}
-	return string.format("Raid vault (%d/%d)", st.count or 0, Constants.RAID_VAULT_MAX)
+	local progress = st.rawProgress or st.count or 0
+	local nextThreshold
+	for _, threshold in ipairs({ 2, 4, 6 }) do
+		if progress < threshold then nextThreshold = threshold break end
+	end
+	if not nextThreshold then return "Raid Great Vault complete" end
+	local remaining = nextThreshold - progress
+	local noun = remaining == 1 and "boss" or "bosses"
+	local difficulty = st.highestDifficulty
+	if not difficulty then
+		local bestRank = 0
+		for _, slot in ipairs(st.slots or {}) do
+			local rank = RaidDifficultyRank(slot.level)
+			if rank > bestRank then
+				bestRank = rank
+				difficulty = RaidDifficultyName(slot.level)
+			end
+		end
+	end
+	return string.format("Continue %s on %s and kill %d more %s",
+		Constants.CURRENT_RAID_NAME, difficulty or "your current difficulty", remaining, noun)
 end
 
 _G[ADDON_NAME .. "RaidTracker"] = T
