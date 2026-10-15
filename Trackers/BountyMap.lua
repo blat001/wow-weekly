@@ -82,6 +82,19 @@ function T:IsComplete(charState)
 	return s == "used"
 end
 
+function T:IsRelevant(charState)
+	local s = (charState.trackers[self.id] or {}).state
+	if s == "inbags" then return true end
+
+	-- Once Purging the Vaults is complete, repeating it is no longer an
+	-- actionable way to obtain a map this week. Keep the Bounty Map status in
+	-- the grid, but do not offer a stale Game Plan recommendation.
+	local purging = charState.trackers[Constants.TRACKER_PURGINGVAULTS] or {}
+	local purgingComplete = purging.done == true
+		or (purging.cur ~= nil and purging.max ~= nil and purging.cur >= purging.max)
+	return not purgingComplete
+end
+
 function T:GetAction(charState)
 	local s = (charState.trackers[self.id] or {}).state
 	if s == "inbags" then
@@ -91,7 +104,7 @@ function T:GetAction(charState)
 		local needsGilded = gilded.max ~= nil and gilded.max > 0
 			and (gilded.looted or 0) < gilded.max and maxTier >= 11
 		if Constants.IsMidnightSeason2Active() and needsGilded then
-			return "Use your Map in a Tier 11 Bountiful Delve for Hero gear and Gilded Stash progress"
+			return "Use your Map in a Tier 11 Bountiful Delve"
 		end
 		return "Use your Map in a Tier 8 Delve for Hero gear"
 	end

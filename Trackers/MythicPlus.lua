@@ -56,18 +56,23 @@ function T:Scan(charState)
 	local rawProgress = 0
 	local hasRuns = false
 	local highestLevel = 0
-	local qualifiedRuns = 0
+	local qualifiedRuns = st.qualifiedRuns
 	local slots = {}
 	if C_MythicPlus and C_MythicPlus.RequestMapInfo then pcall(C_MythicPlus.RequestMapInfo) end
 	-- NOTE: the M+ track is the "Activities" threshold type (there is no .MythicPlus).
-	local ok, activities = pcall(C_WeeklyRewards.GetActivities,
-	                             Enum.WeeklyRewardChestThresholdType.Activities)
+	local ok, activities = pcall(function() return C_WeeklyRewards.GetActivities(
+	                             Enum.WeeklyRewardChestThresholdType.Activities) end)
+	if not ok or type(activities) ~= "table" or #activities == 0 then
+		charState.trackers[self.id] = st
+		return
+	end
 	if ok and activities then
 		for _, a in ipairs(activities) do
 			if (a.progress or 0) > 0 then hasRuns = true end
 			if (a.progress or 0) > 0 and (a.level or 0) > highestLevel then highestLevel = a.level end
 			if (a.progress or 0) > rawProgress then rawProgress = a.progress end
-			if (a.level or 0) >= Constants.MPLUS_MIN_LEVEL then
+			if (a.progress or 0) >= (a.threshold or 0)
+				and (a.level or 0) >= Constants.MPLUS_MIN_LEVEL then
 				if (a.threshold or 0) > count then count = a.threshold end
 			end
 			slots[#slots + 1] = {
@@ -81,12 +86,14 @@ function T:Scan(charState)
 	end
 	if Constants.IsMidnightSeason2Active() and C_MythicPlus and C_MythicPlus.GetRunHistory then
 		local historyOK, history = pcall(C_MythicPlus.GetRunHistory, false, true)
-		if historyOK and type(history) == "table" then
+		if historyOK and type(history) == "table" and #history > 0 then
+			local observed = 0
 			for _, run in ipairs(history) do
 				if run.thisWeek ~= false and (run.level or 0) >= Constants.MPLUS_MIN_LEVEL then
-					qualifiedRuns = qualifiedRuns + 1
+					observed = observed + 1
 				end
 			end
+			qualifiedRuns = math.max(qualifiedRuns or 0, observed, count)
 		end
 	end
 	table.sort(slots, function(a, b) return a.threshold < b.threshold end)
@@ -97,6 +104,13 @@ function T:Scan(charState)
 	st.count = count
 	st.rawProgress = rawProgress
 	st.hasRuns = hasRuns
+	-- Never retain more qualifying runs than the current week's Vault total.
+	-- Run history can lag behind the zero-progress response at weekly reset.
+	if rawProgress == 0 then
+		qualifiedRuns = 0
+	elseif qualifiedRuns ~= nil then
+		qualifiedRuns = math.min(rawProgress, math.max(qualifiedRuns, count))
+	end
 	st.qualifiedRuns = qualifiedRuns
 	st.slots = slots
 	st.lastUpdated = time()
@@ -128,8 +142,18 @@ end
 
 function T:IsComplete(charState)
 	local st = charState.trackers[self.id] or {}
-	local n = Constants.IsMidnightSeason2Active() and (st.count or 0) or (st.rawProgress or 0)
-	return n >= Constants.MPLUS_MYTH_THRESHOLD
+	local n = Constants.IsMidnightSeason2Active() and math.max(st.count or 0, st.qualifiedRuns or 0) or (st.rawProgress or 0)
+	return n >= Constants.MPLUS_VAULT_MAX
+end
+
+function T:IsGoalMet(charState)
+	local st = charState.trackers[self.id] or {}
+	local n = Constants.IsMidnightSeason2Active() and math.max(st.count or 0, st.qualifiedRuns or 0)
+		or (st.rawProgress or 0)
+	local Config = _G[ADDON_NAME .. "Config"]
+	local target = Config and Config.GetVaultGoalThreshold and Config:GetVaultGoalThreshold(charState, self.id)
+		or Constants.MPLUS_MYTH_THRESHOLD
+	return n >= target
 end
 
 -- Only recommend M+ to characters who actually ran M+ this week.
@@ -141,10 +165,10 @@ end
 function T:GetAction(charState)
 	local st = charState.trackers[self.id] or {}
 	local active = Constants.IsMidnightSeason2Active()
-	if active and (st.qualifiedRuns or 0) == 0 then
-		return "1 more Mythic+ run for next Vault slot"
+	if active and st.qualifiedRuns == nil then
+		return "Complete +10 Mythic+ runs toward the next Myth Vault slot (run count unavailable)"
 	end
-	local runs = active and (st.qualifiedRuns or 0) or (st.rawProgress or 0)
+	local runs = active and math.max(st.qualifiedRuns or 0, st.count or 0) or (st.rawProgress or 0)
 	local nextThreshold
 	for _, threshold in ipairs({ 1, 4, 8 }) do
 		if runs < threshold then nextThreshold = threshold break end

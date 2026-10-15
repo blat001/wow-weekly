@@ -4,6 +4,183 @@ local Constants  = _G[ADDON_NAME .. "Constants"]
 
 local Config = {}
 
+local CHARACTER_GOALS = {
+	{ key = "balanced", label = "Balanced week",
+		description = "A little of everything. Suggests eligible weekly quests, Delves, dungeons and profession tasks using your Game Plan priorities and activity history. Your slot target applies separately to World and Dungeon; Raid keeps its full three-slot target. Other weekly tasks can still be suggested after your Vault targets are met." },
+	{ key = "delves", label = "Delves and Hero gear",
+		description = "Gear this character through Delves. Suggests Tier 8+ runs for Hero-quality World Vault choices, plus available Bounty Maps and Gilded Stash tasks. Your slot target counts only the World row; map and stash tasks may remain after that target is met." },
+	{ key = "mplus", label = "Mythic+ Vault",
+		description = "Work toward Myth-quality Dungeon Vault choices with +10 or higher Mythic+ runs. Suggests dungeons even if you have not started this week. Stops when the chosen number of qualifying Dungeon slots is filled. World and Raid slots do not count toward this gear goal." },
+	{ key = "raid", label = "Raid Vault",
+		description = "Fill the Raid Vault row. Raid Goals uses your recorded difficulty and calendar to suggest boss kills or joining a group; it starts with Normal if no difficulty is known. Stops at your chosen number of Raid slots. This goal counts unlocked slots, without requiring a particular gear quality." },
+	{ key = "professions", label = "Profession knowledge",
+		description = "Keep this character's profession knowledge moving. Suggests tracked weekly profession quests and treatises for known professions at skill 25 or higher, even without activity history. Stops when those tracked tasks are complete. Does not suggest Vault runs or track every possible knowledge source." },
+}
+
+function Config:GetCharacterGoalDescription(charState)
+	local descriptions = {}
+	for _, choice in ipairs(CHARACTER_GOALS) do
+		if self:HasCharacterGoal(charState, choice.key) then descriptions[#descriptions + 1] = choice.description end
+	end
+	return table.concat(descriptions, "\n\n")
+end
+
+function Config:GetCharacterGoal(charState)
+	local selected = self:GetCharacterGoals(charState)
+	local labels, only = {}, nil
+	for _, choice in ipairs(CHARACTER_GOALS) do
+		if selected[choice.key] then labels[#labels + 1] = choice.label; only = choice.key end
+	end
+	if #labels == 0 then return "none", "No activity goals" end
+	return #labels == 1 and only or "multiple", table.concat(labels, " + ")
+end
+
+function Config:GetCharacterGoals(charState)
+	if not charState then return {balanced=true} end
+	charState.gamePlanGoal = charState.gamePlanGoal or {}
+	local goal = charState.gamePlanGoal
+	if not goal.activities then
+		goal.activities = {}
+		if goal.focus == "bonusroll" then
+			goal.bonusRoll = true
+		else
+			local valid = false
+			for _, choice in ipairs(CHARACTER_GOALS) do
+				if choice.key == goal.focus then goal.activities[choice.key] = true; valid = true end
+			end
+			if not valid then goal.activities.balanced = true end
+		end
+		goal.focus = nil
+	end
+	return goal.activities
+end
+
+function Config:HasCharacterGoal(charState, focus)
+	return self:GetCharacterGoals(charState)[focus] == true
+end
+
+function Config:SetCharacterActivityGoal(charKey, focus, enabled)
+	local c = WoWWeekly.db.chars[charKey]
+	if not c then return end
+	for _, choice in ipairs(CHARACTER_GOALS) do
+		if choice.key == focus then
+			self:GetCharacterGoals(c)[focus] = enabled and true or nil
+			return
+		end
+	end
+end
+
+function Config:IsCharacterBonusRollEnabled(charState)
+	self:GetCharacterGoals(charState)
+	return charState and charState.gamePlanGoal.bonusRoll == true
+end
+
+function Config:SetCharacterBonusRoll(charKey, enabled)
+	local c = WoWWeekly.db.chars[charKey]
+	if not c then return end
+	self:GetCharacterGoals(c)
+	c.gamePlanGoal.bonusRoll = enabled and true or false
+end
+
+function Config:SetCharacterGoal(charKey, focus)
+	local c = WoWWeekly.db.chars[charKey]
+	if not c then return end
+	for _, choice in ipairs(CHARACTER_GOALS) do
+		if focus == choice.key then
+			self:GetCharacterGoals(c)
+			c.gamePlanGoal.activities = {[focus] = true}
+			return
+		end
+	end
+end
+
+function Config:GetCharacterVaultSlots(charState)
+	local goal = charState and charState.gamePlanGoal
+	local slots = goal and tonumber(goal.vaultSlots)
+	if slots == 1 or slots == 2 or slots == 3 then return slots end
+	return self:GetCharacterGoal(charState) == "raid" and 3 or 2
+end
+
+function Config:SetCharacterVaultSlots(charKey, slots)
+	local c = WoWWeekly.db.chars[charKey]
+	slots = tonumber(slots)
+	if not c or (slots ~= 1 and slots ~= 2 and slots ~= 3) then return end
+	c.gamePlanGoal = c.gamePlanGoal or {}
+	c.gamePlanGoal.vaultSlots = slots
+end
+
+function Config:GoalAllowsTracker(charState, trackerID)
+	local selected = self:GetCharacterGoals(charState)
+	if selected.balanced then return true end
+	if selected.delves and (trackerID == Constants.TRACKER_DELVES or trackerID == Constants.TRACKER_BOUNTYMAP
+			or trackerID == Constants.TRACKER_GILDEDSTASH
+		) then return true end
+	if selected.mplus and trackerID == Constants.TRACKER_MYTHICPLUS then return true end
+	if selected.raid and trackerID == Constants.TRACKER_RAID then return true end
+	if selected.professions and (trackerID == Constants.TRACKER_PROFESSION1 or trackerID == Constants.TRACKER_PROFESSION2) then return true end
+	return false
+end
+
+-- Count unlocked reward choices, independent of gear quality and chosen focus.
+-- Prefer the saved slot flags; thresholds provide compatibility for old snapshots.
+function Config:GetCombinedVaultProgress(charState)
+	local sources = {
+		{ id = Constants.TRACKER_DELVES, thresholds = {2,4,8}, noun = "World activities" },
+		{ id = Constants.TRACKER_MYTHICPLUS, thresholds = {1,4,8}, noun = "qualifying dungeon runs" },
+		{ id = Constants.TRACKER_RAID, thresholds = {2,4,6}, noun = "raid boss kills" },
+	}
+	local total, nextActions = 0, {}
+	for _, source in ipairs(sources) do
+		local st = (charState.trackers or {})[source.id] or {}
+		local unlocked, nextThreshold = 0, nil
+		for i, threshold in ipairs(source.thresholds) do
+			local slot = st.slots and st.slots[i]
+			local filled
+			if slot then filled = slot.unlocked == true
+			else filled = (st.rawProgress or st.count or 0) >= threshold end
+			if filled then unlocked = unlocked + 1
+			elseif not nextThreshold then nextThreshold = threshold end
+		end
+		total = total + unlocked
+		local enabled = source.id == Constants.TRACKER_RAID and self:IsRaidPlanShown()
+			or source.id ~= Constants.TRACKER_RAID and self:IsRecommendationEnabled(source.id)
+		local raidTracker = _G[ADDON_NAME .. "RaidTracker"]
+		if source.id == Constants.TRACKER_RAID and raidTracker and raidTracker.IsRecommendationRelevant then
+			enabled = enabled and raidTracker:IsRecommendationRelevant(charState)
+		end
+		if nextThreshold and enabled then
+			nextActions[#nextActions + 1] = {
+				id = source.id, noun = source.noun,
+				remaining = math.max(1, nextThreshold - (st.rawProgress or st.count or 0)),
+			}
+		end
+	end
+	local planner = _G[ADDON_NAME .. "Tooltip"]
+	for _, action in ipairs(nextActions) do
+		if planner and planner.PlanEffort then
+			action.minutes, action.gain, action.urgent = planner:PlanEffort(action.id, charState, action.remaining)
+		end
+	end
+	-- Compare estimated effort across activities, including group setup.
+	table.sort(nextActions, function(a, b)
+		if not not a.urgent ~= not not b.urgent then return a.urgent == true end
+		local ae, be = math.ceil((a.minutes or math.huge) / 10), math.ceil((b.minutes or math.huge) / 10)
+		if ae ~= be then return ae < be end
+		if (a.gain or 0) ~= (b.gain or 0) then return (a.gain or 0) > (b.gain or 0) end
+		return self:GetRecommendationRank(a.id) < self:GetRecommendationRank(b.id)
+	end)
+	return total, nextActions[1]
+end
+
+function Config:GetVaultGoalThreshold(charState, trackerID)
+	local slots = self:GetCharacterVaultSlots(charState)
+	if trackerID == Constants.TRACKER_RAID then
+		-- Balanced retains the existing full raid goal.
+		return self:HasCharacterGoal(charState, "balanced") and not self:HasCharacterGoal(charState, "raid") and 6 or ({2, 4, 6})[slots]
+	end
+	return (trackerID == Constants.TRACKER_MYTHICPLUS and {1, 4, 8} or {2, 4, 8})[slots]
+end
+
 local RECOMMENDATIONS = {
 	{ key = Constants.TRACKER_BOUNTYMAP, label = "Bounty Map", ids = { Constants.TRACKER_BOUNTYMAP } },
 	{ key = Constants.TRACKER_METAQUEST, label = "Weekly Meta Quest", ids = { Constants.TRACKER_METAQUEST } },
@@ -332,6 +509,7 @@ function Config:Initialize()
 	panel.cards = {}
 	panel.choiceRows = {}
 	panel.priorityRows = {}
+	panel.helpTexts = {}
 
 	panel:SetScript("OnShow", function() Config:Refresh() end)
 
@@ -363,10 +541,28 @@ function Config:Refresh()
 	for _, card in ipairs(panel.cards) do card:Hide() end
 	for _, row in ipairs(panel.choiceRows) do row:Hide() end
 	for _, row in ipairs(panel.priorityRows) do row:Hide() end
+	for _, fs in ipairs(panel.helpTexts) do fs:Hide() end
 	if panel.planExplanation then panel.planExplanation:Hide() end
 
 	local y = -4
 	local checkIdx, hdrIdx, sliderIdx, cardIdx, choiceIdx, priorityIdx = 0, 0, 0, 0, 0, 0
+	local helpIdx = 0
+	local function addHelp(text)
+		helpIdx = helpIdx + 1
+		local fs = panel.helpTexts[helpIdx]
+		if not fs then
+			fs = child:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+			fs:SetWidth(480)
+			fs:SetJustifyH("LEFT")
+			fs:SetTextColor(0.75, 0.75, 0.8)
+			panel.helpTexts[helpIdx] = fs
+		end
+		fs:ClearAllPoints()
+		fs:SetPoint("TOPLEFT", child, "TOPLEFT", 12, y)
+		fs:SetText(text)
+		fs:Show()
+		y = y - fs:GetStringHeight() - 14
+	end
 
 	-- Soft-backed cards turn related controls into visual sections instead of
 	-- one uninterrupted list. Cards are laid out after their contents so their
@@ -421,7 +617,7 @@ function Config:Refresh()
 
 	-- One checkbox row. kind: "tracker" | "char" | "group" | "crest" | "minimap". For "group",
 	-- childIds is the list of tracker IDs the master toggle controls.
-	local function addCheck(kind, key, text, color, checked, indent, childIds)
+	local function addCheck(kind, key, text, color, checked, indent, childIds, help)
 		checkIdx = checkIdx + 1
 		local cb = panel.checks[checkIdx]
 		if not cb then
@@ -431,6 +627,17 @@ function Config:Refresh()
 			cb.rowBg:SetColorTexture(1, 1, 1, 0.025)
 			cb.label = cb:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 			cb.label:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+			cb:SetScript("OnEnter", function(self)
+				if not self.help then return end
+				GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+				GameTooltip:SetText(self.label:GetText())
+				GameTooltip:AddLine(self.help, 1, 1, 1, true)
+				GameTooltip:Show()
+			end)
+			cb:SetScript("OnLeave", function() GameTooltip:Hide() end)
+			cb:SetScript("OnHide", function(self)
+				if GameTooltip:IsOwned(self) then GameTooltip:Hide() end
+			end)
 			cb:SetScript("OnClick", function(self)
 				if self.kind == "tracker" then
 					Config:SetTrackerEnabled(self.key, self:GetChecked())
@@ -438,6 +645,10 @@ function Config:Refresh()
 					Config:SetPlanOption(self.key, self:GetChecked())
 				elseif self.kind == "recommendation" then
 					Config:SetRecommendationEnabled(self.key, self:GetChecked())
+				elseif self.kind == "activitygoal" then
+					Config:SetCharacterActivityGoal(self.key, self.childIds, self:GetChecked())
+				elseif self.kind == "bonusroll" then
+					Config:SetCharacterBonusRoll(self.key, self:GetChecked())
 				elseif self.kind == "minimap" then
 					Config:SetMinimapIconShown(self:GetChecked())
 				elseif self.kind == "crest" then
@@ -464,6 +675,7 @@ function Config:Refresh()
 		cb.kind = kind
 		cb.key = key
 		cb.childIds = childIds
+		cb.help = help
 		cb:SetChecked(checked)
 		y = y - 26
 	end
@@ -545,16 +757,21 @@ function Config:Refresh()
 			row = CreateFrame("Frame", nil, child)
 			row.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 			row.label:SetPoint("TOPLEFT", 4, 0)
-			row.dropdown = CreateFrame("Frame", "WoWWeeklyConfigSortDropdown", row,
+			row.dropdown = CreateFrame("Frame", "WoWWeeklyConfigDropdown" .. choiceIdx, row,
 				"UIDropDownMenuTemplate")
 			row.dropdown:SetPoint("TOPLEFT", -16, -18)
-			UIDropDownMenu_SetWidth(row.dropdown, 220)
+			UIDropDownMenu_SetWidth(row.dropdown, 300)
 			UIDropDownMenu_Initialize(row.dropdown, function(_, level)
 				for _, choice in ipairs(row.choices or {}) do
 					local key, label = choice.key, choice.label
 					local info = UIDropDownMenu_CreateInfo()
 					info.text = label
 					info.checked = key == row.selected
+					if choice.description then
+						info.tooltipTitle = label
+						info.tooltipText = choice.description
+						info.tooltipOnButton = true
+					end
 					info.func = function()
 						row.onChanged(key)
 						Config:Refresh()
@@ -591,22 +808,23 @@ function Config:Refresh()
 		addCheck("planoption", "gamePlanEnabled", "Show Weekly Game Plan", nil, Config:IsGamePlanShown())
 		addCheck("planoption", "nextStepEnabled", "Show Next Step recommendations", nil, Config:IsNextStepShown(), 18)
 		addCheck("planoption", "raidPlanEnabled", "Show Raid Plan column", nil, Config:IsRaidPlanShown(), 18)
+		addHelp("Play Next ranks all tracked characters by upcoming raids, estimated time to the next reward, then gear benefit. Choose goals in the Characters tab. Completed goals go last; status columns keep their own order.")
 		y = y - 14
 		addSlider("Maximum Delve tier", Config:GetMaxDelveTier(), 8, 11,
 			function(value) Config:SetMaxDelveTier(value) end)
 		endCard(displayCard, displayTop)
 
 		local priorityCard, priorityTop = beginCard()
-		addHeader("Next Step priority", { r = 1, g = 0.82, b = 0 })
+		addHeader("Activity preferences", { r = 1, g = 0.82, b = 0 })
 		local explanation = panel.planExplanation or child:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 		panel.planExplanation = explanation
 		explanation:ClearAllPoints()
 		explanation:SetPoint("TOPLEFT", child, "TOPLEFT", 12, y)
 		explanation:SetWidth(480); explanation:SetJustifyH("LEFT")
-		explanation:SetText("Untick an activity to keep it in the tracker grid but exclude it from recommendations. Use the arrows to set priority.")
+		explanation:SetText("Untick an activity to exclude it from recommendations. Arrows break ties after urgency, estimated effort and gear benefit. Time estimates are rough and include group setup.")
 		explanation:SetTextColor(0.65, 0.65, 0.7)
 		explanation:Show()
-		y = y - 34
+		y = y - math.max(34, explanation:GetStringHeight() + 8)
 		local byKey = {}
 		for _, item in ipairs(RECOMMENDATIONS) do byKey[item.key] = item end
 		local order = Config:GetRecommendationOrder()
@@ -616,7 +834,7 @@ function Config:Refresh()
 		end
 		endCard(priorityCard, priorityTop)
 	elseif self.activeTab == "chars" then
-		panel.hint:SetText("Choose your hover size and which characters belong in the overview. Your current character always appears first.")
+		panel.hint:SetText("Choose characters and weekly goals. Hover over a goal for details.")
 		panel.btnAll:SetText("Track All")
 		panel.btnNone:SetText("Track None")
 
@@ -643,6 +861,21 @@ function Config:Refresh()
 			local col = ClassColor(c.classFile)
 			local text = name .. "  |cFF888888(" .. (c.realm or "?") .. ", level " .. (c.level or 0) .. ")|r"
 			addCheck("char", key, text, col, Config:IsTracked(key))
+			local charKey = key
+			for _, choice in ipairs(CHARACTER_GOALS) do
+				addCheck("activitygoal", charKey, choice.label, nil, Config:HasCharacterGoal(c, choice.key), 18, choice.key, choice.description)
+			end
+			addCheck("bonusroll", charKey, "Bonus-roll option", nil, Config:IsCharacterBonusRollEnabled(c), 18, nil,
+				"Fill any three Vault slots across World, Dungeon and Raid to unlock a bonus-roll token instead of gear. Works alongside your goals, or alone if all activities are unticked.")
+			local selected = Config:GetCharacterGoals(c)
+			if selected.balanced or selected.delves or selected.mplus or selected.raid then
+				addDropdown("Weekly Vault target", {
+					{ key = 1, label = "1 Vault slot", description = "Per selected row: 2 Tier 8+ World credits, 1 Mythic+ run at +10 or higher, or 2 raid bosses." },
+					{ key = 2, label = "2 Vault slots", description = "Per selected row: 4 Tier 8+ World credits, 4 Mythic+ runs at +10 or higher, or 4 raid bosses." },
+					{ key = 3, label = "All 3 Vault slots", description = "Per selected row: 8 Tier 8+ World credits, 8 Mythic+ runs at +10 or higher, or 6 raid bosses. More slots give more choices, not more weekly items." },
+				}, Config:GetCharacterVaultSlots(c),
+					function(slots) Config:SetCharacterVaultSlots(charKey, slots) end)
+			end
 		end
 		endCard(rosterCard, rosterTop)
 	else

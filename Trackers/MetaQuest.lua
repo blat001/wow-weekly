@@ -130,6 +130,10 @@ function T:IsComplete(charState)
 	return (charState.trackers[self.id] or {}).done == true
 end
 
+function T:IsRelevant(charState)
+	return self:IsVisible(charState)
+end
+
 function T:GetAction(charState)
 	local st = charState.trackers[self.id] or {}
 	local name = st.name or "meta"

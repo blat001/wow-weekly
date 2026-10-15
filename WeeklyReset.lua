@@ -16,6 +16,7 @@ end
 function WeeklyReset:UpdateResetTime()
 	local db = WoWWeekly.db
 	local secsUntilReset = C_DateAndTime.GetSecondsUntilWeeklyReset()
+	if type(secsUntilReset) ~= "number" then return end
 	local now = time()
 	db.global.nextWeeklyResetAt = now + secsUntilReset
 end
@@ -28,10 +29,9 @@ function WeeklyReset:GetCurrentResetPeriodId()
 	-- A plain "weeks since epoch" bucket flips at an arbitrary wall-clock time
 	-- unrelated to the actual reset day.
 	local secs = C_DateAndTime.GetSecondsUntilWeeklyReset()
-	if not secs then
-		-- API not ready yet; reuse the last computed value rather than risk a
-		-- bogus mismatch that would wipe current-week data.
-		return WoWWeekly.db.global.currentResetPeriodId or 0
+	if type(secs) ~= "number" then
+		-- No authoritative week yet. Do not clear or restamp any characters.
+		return nil
 	end
 	return math.floor((time() + secs) / 604800)  -- 604800 = seconds in a week
 end
@@ -39,6 +39,8 @@ end
 function WeeklyReset:CheckAndApplyWeeklyReset()
 	local db = WoWWeekly.db
 	local currentPeriodId = self:GetCurrentResetPeriodId()
+	if currentPeriodId == nil then return end
+	self:UpdateResetTime()
 	-- Keep the global "what week is it" cache current.
 	db.global.currentResetPeriodId = currentPeriodId
 
@@ -86,6 +88,7 @@ function WeeklyReset:IsWeekStale(charKey)
 	if not charState then return true end
 
 	local currentPeriodId = self:GetCurrentResetPeriodId()
+	if currentPeriodId == nil then return true end
 	return charState.resetPeriodId ~= currentPeriodId
 end
 

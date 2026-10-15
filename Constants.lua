@@ -1,5 +1,5 @@
 local ADDON_NAME = "WoWWeekly"
-local ADDON_VERSION = "1.4.1"
+local ADDON_VERSION = "1.5.0"
 
 local Constants = {
 	ADDON_NAME = ADDON_NAME,
@@ -127,6 +127,21 @@ local Constants = {
 		[186] = { 95135 }, -- Mining
 		[393] = { 95136 }, -- Skinning
 		[197] = { 95137 }, -- Tailoring
+	},
+
+	-- Monthly Darkmoon Faire quests, keyed by base profession skill line.
+	PROFESSION_DARKMOON_QUESTS = {
+		[171] = { 29506 }, -- Alchemy
+		[164] = { 29508 }, -- Blacksmithing
+		[333] = { 29510 }, -- Enchanting
+		[202] = { 29511 }, -- Engineering
+		[182] = { 29514 }, -- Herbalism
+		[773] = { 29515 }, -- Inscription
+		[755] = { 29516 }, -- Jewelcrafting
+		[165] = { 29517 }, -- Leatherworking
+		[186] = { 29518 }, -- Mining
+		[393] = { 29519 }, -- Skinning
+		[197] = { 29520 }, -- Tailoring
 	},
 
 	-- Prey (Midnight weekly hunt). Each difficulty is its own weekly goal of 4

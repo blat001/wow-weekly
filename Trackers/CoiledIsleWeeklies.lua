@@ -75,6 +75,15 @@ local function CreateQuestTracker(id, label, questID, order, progressMax, percen
 		return (charState.trackers[self.id] or {}).done == true
 	end
 
+	if id == Constants.TRACKER_COILEDISLE_WORLDBOSS then
+		function T:IsRelevant(charState)
+			-- Only recommend this gear reward to characters at or below 279.
+			-- Unknown equipment is not evidence that the reward is useful.
+			local ilvl = tonumber(charState.ilvl) or 0
+			return ilvl > 0 and ilvl <= 279
+		end
+	end
+
 	function T:GetAction(charState)
 		if progressMax then
 			local st = charState.trackers[self.id] or {}

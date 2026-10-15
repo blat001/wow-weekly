@@ -16,7 +16,8 @@ end
 local function ScanDifficulty(difficultyID)
 	local progress = 0
 	local encounters = Constants.CURRENT_RAID_BOSSES
-	if RequestRaidInfo then RequestRaidInfo() end
+	-- Core requests lockouts and scans again on UPDATE_INSTANCE_INFO.
+	-- Requesting here would retrigger that event from inside its handler.
 	for index = 1, (GetNumSavedInstances and GetNumSavedInstances() or 0) do
 		local name, _, reset, difficulty, locked, _, _, isRaid, _, _, numEncounters, encounterProgress = GetSavedInstanceInfo(index)
 		if isRaid and difficulty == difficultyID and (reset or 0) > 0 and locked and IsCurrentRaid(name) then

@@ -3,6 +3,13 @@ local Constants = _G[ADDON_NAME .. "Constants"]
 
 local WoWWeekly = LibStub("AceAddon-3.0"):NewAddon(ADDON_NAME, "AceEvent-3.0", "AceConsole-3.0")
 
+local function CheckWeeklyReset()
+	local WeeklyReset = _G[ADDON_NAME .. "WeeklyReset"]
+	if WeeklyReset and WeeklyReset.CheckAndApplyWeeklyReset then
+		WeeklyReset:CheckAndApplyWeeklyReset()
+	end
+end
+
 function WoWWeekly:OnInitialize()
 	self.db = self:GetDatabase()
 	self.trackerRegistry = {}
@@ -406,9 +413,41 @@ function WoWWeekly:RegisterEvents()
 	self:RegisterEvent("PLAYER_LOGOUT", "OnPlayerLogout")
 	self:RegisterEvent("TIME_PLAYED_MSG", "OnTimePlayed")
 	self:RegisterEvent("WEEKLY_REWARDS_UPDATE", "OnWeeklyRewardsUpdate")
+	self:RegisterEvent("UPDATE_INSTANCE_INFO", "OnRaidInfoUpdate")
+	self:RegisterEvent("BOSS_KILL", "RequestRaidRefresh")
+	self:RegisterEvent("PLAYER_ENTERING_WORLD", "RequestRaidRefresh")
+	self:RegisterEvent("CALENDAR_UPDATE_EVENT_LIST", "OnCalendarUpdate")
+	self:RegisterEvent("CALENDAR_UPDATE_PENDING_INVITES", "OnCalendarUpdate")
+end
+
+function WoWWeekly:RequestRaidRefresh()
+	if RequestRaidInfo then RequestRaidInfo() end
+end
+
+function WoWWeekly:OnRaidInfoUpdate()
+	CheckWeeklyReset()
+	local registry = _G[ADDON_NAME .. "TrackerRegistry"]
+	local database = _G[ADDON_NAME .. "Database"]
+	local charState = database and database:GetCharState()
+	if not (registry and charState) then return end
+	for _, id in ipairs({ Constants.TRACKER_RAID_LFR, Constants.TRACKER_RAID_NORMAL,
+		Constants.TRACKER_RAID_HEROIC, Constants.TRACKER_RAID_MYTHIC }) do
+		local tracker = registry:GetTracker(id)
+		if tracker and tracker.Scan then tracker:Scan(charState) end
+	end
+end
+
+function WoWWeekly:OnCalendarUpdate()
+	CheckWeeklyReset()
+	local TrackerRegistry = _G[ADDON_NAME .. "TrackerRegistry"]
+	local Database = _G[ADDON_NAME .. "Database"]
+	local charState = Database and Database:GetCharState()
+	local tracker = TrackerRegistry and TrackerRegistry:GetTracker(Constants.TRACKER_RAID)
+	if tracker and charState and tracker.Scan then tracker:Scan(charState) end
 end
 
 function WoWWeekly:OnWeeklyRewardsUpdate()
+	CheckWeeklyReset()
 	local TrackerRegistry = _G[ADDON_NAME .. "TrackerRegistry"]
 	local Database = _G[ADDON_NAME .. "Database"]
 	local charState = Database and Database:GetCharState()

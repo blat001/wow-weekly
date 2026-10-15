@@ -59,6 +59,81 @@ local function OrderedCharKeys(db, maxCharacters)
     return keys
 end
 
+-- Planning estimates, not measured clear times. Group activities include setup.
+local function UpcomingRaid(st)
+    local calendar = st.calendar
+    if not (calendar and calendar.state == "scheduled" and calendar.startTime
+        and C_DateAndTime and C_DateAndTime.GetCurrentCalendarTime
+        and C_DateAndTime.AdjustTimeByMinutes and C_DateAndTime.CompareCalendarTime) then return false end
+    local now = C_DateAndTime.GetCurrentCalendarTime()
+    return C_DateAndTime.CompareCalendarTime(calendar.startTime, now) >= 0
+        and C_DateAndTime.CompareCalendarTime(calendar.startTime,
+            C_DateAndTime.AdjustTimeByMinutes(now, 120)) <= 0
+end
+
+function Tooltip:PlanEffort(id, c, bonusRemaining)
+    local st = c.trackers[id] or {}
+    local thresholds, progress, perRun, setup, reward
+    if id == Constants.TRACKER_DELVES or id == Constants.TRACKER_MYTHICPLUS then
+        local dungeon = id == Constants.TRACKER_MYTHICPLUS
+        thresholds = dungeon and {1, 4, 8} or {2, 4, 8}
+        progress = Constants.IsMidnightSeason2Active()
+            and st.qualifiedRuns and math.max(st.qualifiedRuns, st.count or 0)
+            or (not Constants.IsMidnightSeason2Active() and st.rawProgress or nil)
+        perRun, setup, reward = dungeon and 40 or 20, dungeon and 15 or 0, dungeon and 318 or 305
+    elseif id == Constants.TRACKER_RAID then
+        thresholds, progress, perRun, setup = {2, 4, 6}, st.rawProgress, 20, UpcomingRaid(st) and 0 or 45
+    end
+    local minutes
+    if thresholds then
+        local remaining = bonusRemaining
+        if not remaining and progress then
+            for _, threshold in ipairs(thresholds) do
+                if progress < threshold then remaining = threshold - progress break end
+            end
+        end
+        minutes = remaining and (remaining * perRun + setup)
+        local delve = _G[ADDON_NAME .. "DelveTracker"]
+        if id == Constants.TRACKER_DELVES and not bonusRemaining
+            and delve and delve.GetLabyrinthAction and delve:GetLabyrinthAction(c) then
+            -- Conservative estimate: a full Labyrinth is three Delve credits.
+            minutes = 3 * perRun
+        end
+    elseif id == Constants.TRACKER_BOUNTYMAP then
+        minutes = st.state == "inbags" and 20 or nil
+        reward = 305
+    elseif id == Constants.TRACKER_GILDEDSTASH then
+        minutes = st.looted ~= nil and 25 or nil -- next stash, not every remaining stash
+        reward = 305
+    elseif id == Constants.TRACKER_PROFESSION1 or id == Constants.TRACKER_PROFESSION2 then
+        minutes = st.weeklyDone == false and (15 + (st.treatiseDone == false and 5 or 0))
+            or (st.treatiseDone == false and 5 or nil)
+    elseif id == Constants.TRACKER_TIMEWALKING then
+        minutes = st.cur and st.max and (math.max(1, st.max - st.cur) * 25 + 10)
+    elseif id == Constants.TRACKER_COILEDISLE_WORLDBOSS then
+        minutes = 15
+    end
+    -- A ready turn-in is a short, meaningful completion even for an otherwise
+    -- unestimated quest. Do not convert arbitrary quest points into minutes.
+    if not minutes and st.cur and st.max and st.max > 0 and st.cur >= st.max then minutes = 5 end
+    local urgent = id == Constants.TRACKER_RAID and UpcomingRaid(st) or false
+    if st.expiresAt and st.expiresAt > time() and st.expiresAt - time() <= 7200 then urgent = true end
+    reward = st.rewardIlvl or reward
+    local gain = reward and (c.ilvl or 0) > 0 and math.max(0, reward - c.ilvl) or 0
+    return minutes, gain, urgent
+end
+
+local function BetterAction(a, b)
+    if not b then return true end
+    if not not a.urgent ~= not not b.urgent then return a.urgent == true end
+    -- Ten-minute bands avoid pretending these broad estimates are exact.
+    local ae, be = math.ceil((a.minutes or math.huge) / 10), math.ceil((b.minutes or math.huge) / 10)
+    if ae ~= be then return ae < be end
+    if (a.gain or 0) ~= (b.gain or 0) then return (a.gain or 0) > (b.gain or 0) end
+    if (a.score or 0) ~= (b.score or 0) then return (a.score or 0) > (b.score or 0) end
+    return (a.id or "") < (b.id or "")
+end
+
 function Tooltip:Show(anchorFrame, persistent, maxCharacters)
     local db = WoWWeekly.db
     if not db or not db.chars then return end
@@ -130,19 +205,6 @@ function Tooltip:Show(anchorFrame, persistent, maxCharacters)
     end
     tip:AddSeparator(1, 1, 1, 1, 0.4)
 
-    -- Column-header row: "Task" label + each character in class color
-    local hdr = tip:AddLine()
-    tip:SetCell(hdr, 1, Constants.COLOR_GRAY .. "Task" .. Constants.COLOR_RESET)
-    for i, key in ipairs(charKeys) do
-        local c = db.chars[key]
-        local label = CharacterHeaderLabel(c, key)
-        if WeeklyReset:IsWeekStale(key) then
-            label = Constants.COLOR_GRAY .. label .. " (old)" .. Constants.COLOR_RESET
-        else
-            label = ClassColor(c.classFile) .. label .. Constants.COLOR_RESET
-        end
-        tip:SetCell(hdr, i + 1, label)
-    end
     -- Collect enabled trackers, bucketed by their declared group
     local Config = _G[ADDON_NAME .. "Config"]
     local byGroup, ungrouped = {}, {}
@@ -218,9 +280,7 @@ function Tooltip:Show(anchorFrame, persistent, maxCharacters)
         end
     end
 
-    -- Rank every character by its single best plausible next action. Raid is
-    -- intentionally kept out of this competition and rendered in its own plan
-    -- column because it normally requires a scheduled group.
+    -- Select the nearest meaningful reward inside each character's goals.
     local activityForTracker = {
         [Constants.TRACKER_DELVES] = "delves",
         [Constants.TRACKER_GILDEDSTASH] = "delves",
@@ -230,40 +290,11 @@ function Tooltip:Show(anchorFrame, persistent, maxCharacters)
         [Constants.TRACKER_PROFESSION2] = "professions",
     }
 
-    local delveGearTrackers = {
-        [Constants.TRACKER_DELVES] = true,
-        [Constants.TRACKER_GILDEDSTASH] = true,
-        [Constants.TRACKER_BOUNTYMAP] = true,
-    }
-
-    local function hasMythTrackActivity(c)
-        local function hasMythSlot(trackerID)
-            local st = c.trackers[trackerID] or {}
-            for _, slot in ipairs(st.slots or {}) do
-                if slot.unlocked and slot.track == "M" then return true end
-            end
-            return false
-        end
-        if hasMythSlot(Constants.TRACKER_MYTHICPLUS)
-            or hasMythSlot(Constants.TRACKER_RAID) then return true end
-
-        local profile = c.activityProfile or {}
-        local mplus = profile.mplus
-        if mplus and (mplus.highest or 0) >= Constants.MPLUS_MIN_LEVEL
-            and Constants.GetActivityAffinity(c, "mplus") >= 0.5 then return true end
-
-        local raid = profile.raid
-        if raid and (raid.highest or 0) >= 3
-            and Constants.GetActivityAffinity(c, "raid") >= 0.5 then return true end
-        return false
-    end
-
     local function actionScore(t, c)
         local st = c.trackers[t.id] or {}
         local rank = Config and Config.GetRecommendationRank
             and Config:GetRecommendationRank(t.id) or 999
-        -- Each configured rank has a wide band. Small progress bonuses settle
-        -- choices inside a rank but can never override the user's ordering.
+        -- Existing activity preferences break ties after urgency, effort and gear.
         local score = 100000 - rank * 100
         if t.id == Constants.TRACKER_MYTHICPLUS and st.hasRuns then
             score = score + math.min(50, st.rawProgress or 0)
@@ -289,68 +320,98 @@ function Tooltip:Show(anchorFrame, persistent, maxCharacters)
     local showNextStep = not (Config and Config.IsNextStepShown) or Config:IsNextStepShown()
     local showRaidPlan = not (Config and Config.IsRaidPlanShown) or Config:IsRaidPlanShown()
     local recs = {}
-    for _, key in ipairs(charKeys) do
+    for _, key in ipairs(OrderedCharKeys(db)) do
         local c = db.chars[key]
+        local focus, goalLabel = "balanced", nil
+        if Config and Config.GetCharacterGoal then focus, goalLabel = Config:GetCharacterGoal(c) end
+        local function hasGoal(wanted)
+            return Config and Config.HasCharacterGoal and Config:HasCharacterGoal(c, wanted) or focus == wanted
+        end
+        local bonusEnabled = Config and Config.IsCharacterBonusRollEnabled and Config:IsCharacterBonusRollEnabled(c)
         local best
         local bestDelveOrDungeon
+        local labyrinthCandidate
         local raidPlan
+        local raidNeedsWork = false
+        local eligibleCount, targetMet = 0, false
         for _, t in pairs(TrackerRegistry:GetAll()) do
-            if showRaidPlan and t.id == Constants.TRACKER_RAID then
+            if t.id == Constants.TRACKER_RAID then
                 local st = c.trackers[t.id] or {}
-                if st.hasKills and t.IsComplete and not t:IsComplete(c) then
-                    raidPlan = (t.GetAction and t:GetAction(c)) or t.label
+                local calendarState = st.calendar and st.calendar.state
+                local followsRaid = hasGoal("raid") or st.hasKills or calendarState == "scheduled"
+                    or calendarState == "pending" or Constants.GetActivityAffinity(c, "raid") >= 0.5
+                local raidTarget = Config and Config.GetVaultGoalThreshold
+                    and Config:GetVaultGoalThreshold(c, t.id) or Constants.RAID_FULL_THRESHOLD
+                local raidEnough = (st.count or 0) >= raidTarget
+                local raidRelevant = not t.IsRecommendationRelevant or t:IsRecommendationRelevant(c)
+                if hasGoal("raid") and (raidRelevant or raidEnough) then
+                    eligibleCount = eligibleCount + 1
+                    targetMet = targetMet or (raidEnough and not t:IsComplete(c))
+                    raidNeedsWork = not raidEnough
+                end
+                local raidAllowed = not (Config and Config.GoalAllowsTracker) or Config:GoalAllowsTracker(c, t.id)
+                raidAllowed = raidAllowed and raidRelevant
+                if showRaidPlan and raidAllowed and followsRaid and not raidEnough then
+                    raidPlan = (t.GetRaidGoal and t:GetRaidGoal(c))
+                        or (t.GetAction and t:GetAction(c)) or t.label
+                    local minutes, gain, urgent = self:PlanEffort(t.id, c)
+                    local candidate = { id = t.id, text = raidPlan, minutes = minutes, gain = gain,
+                        urgent = urgent, score = actionScore(t, c) }
+                    if showNextStep and BetterAction(candidate, best) then best = candidate end
                 end
             elseif showNextStep and t.countsForRecommend then
                 local recommendEnabled = not (Config and Config.IsRecommendationEnabled)
                     or Config:IsRecommendationEnabled(t.id)
+                recommendEnabled = recommendEnabled and (not (Config and Config.GoalAllowsTracker)
+                    or Config:GoalAllowsTracker(c, t.id))
                 local relevant = (t.IsRelevant == nil) or t:IsRelevant(c)
                 -- A decaying history can make established M+ characters
                 -- relevant before they begin that activity in the current week.
                 local activity = activityForTracker[t.id]
                 if not relevant and activity == "mplus" then
-                    relevant = Constants.GetActivityAffinity(c, activity) >= 0.5
+                    relevant = hasGoal("mplus") or Constants.GetActivityAffinity(c, activity) >= 0.5
                 end
                 local worthwhile = (t.StopIlvl == nil)
                     or Constants.VaultWorthDoing(c, t:StopIlvl(c))
+                if hasGoal("delves") then worthwhile = true end
                 if worthwhile and t.id == Constants.TRACKER_GILDEDSTASH
                     and Config and Config.GetMaxDelveTier
                     and Config:GetMaxDelveTier() < 11 then
                     worthwhile = false
                 end
-                if worthwhile and delveGearTrackers[t.id] and hasMythTrackActivity(c) then
-                    worthwhile = false
+                if recommendEnabled and relevant and worthwhile then
+                    eligibleCount = eligibleCount + 1
+                    if t.IsGoalMet and t:IsGoalMet(c) and not t:IsComplete(c) then
+                        targetMet = true
+                    end
                 end
                 if recommendEnabled and relevant and worthwhile
-                    and t.IsComplete and not t:IsComplete(c) then
+                    and t.IsComplete and not t:IsComplete(c)
+                    and not (t.IsGoalMet and t:IsGoalMet(c)) then
                     local score = actionScore(t, c)
-                    if not best or score > best.score
-                        or (score == best.score and (t.order or 999) < (best.order or 999)) then
-                        best = {
+                    local minutes, gain, urgent = self:PlanEffort(t.id, c)
+                    local candidate = {
                             score = score,
+                            minutes = minutes, gain = gain, urgent = urgent,
                             order = t.order or 999,
                             id = t.id,
                             activity = activity,
                             text = (t.GetAction and t:GetAction(c)) or t.label,
                         }
-                    end
+                    if BetterAction(candidate, best) then best = candidate end
+					if t.id == Constants.TRACKER_DELVES and t.GetLabyrinthAction
+						and t:GetLabyrinthAction(c) then labyrinthCandidate = candidate end
 					if activity == "delves" or activity == "mplus" then
-						if not bestDelveOrDungeon or score > bestDelveOrDungeon.score
-							or (score == bestDelveOrDungeon.score
-								and (t.order or 999) < (bestDelveOrDungeon.order or 999)) then
-							bestDelveOrDungeon = {
-								score = score,
-								order = t.order or 999,
-								id = t.id,
-								activity = activity,
-								text = (t.GetAction and t:GetAction(c)) or t.label,
-							}
+						if BetterAction(candidate, bestDelveOrDungeon) then
+							bestDelveOrDungeon = candidate
 						end
 					end
                 end
             end
         end
 		local meta = c.trackers[Constants.TRACKER_METAQUEST] or {}
-		local trailing = not meta.done
+		local trailing = (not Config or not Config.IsRecommendationEnabled
+			or Config:IsRecommendationEnabled(Constants.TRACKER_METAQUEST)) and not meta.done
 			and (meta.qid == 98172 or meta.name == "Trailing Xal'atath")
 		if trailing and best and best.id == Constants.TRACKER_METAQUEST
 			and bestDelveOrDungeon then
@@ -362,97 +423,168 @@ function Tooltip:Show(anchorFrame, persistent, maxCharacters)
 			best.text = string.format("%s; collect Fading Voidwhispers along the way (%d remaining)",
 				best.text, remaining)
 		end
+        -- Prefer the Labyrinth's World progress before farming a new Bounty
+        -- Map through Purging. An already-owned map keeps its normal priority.
+        if labyrinthCandidate and best and best.id == Constants.TRACKER_BOUNTYMAP
+            and (c.trackers[Constants.TRACKER_BOUNTYMAP] or {}).state ~= "inbags"
+            and not best.urgent then
+            best = labyrinthCandidate
+        end
+        local combinedSlots, bonusAction
+        if Config and Config.GetCombinedVaultProgress then
+            combinedSlots, bonusAction = Config:GetCombinedVaultProgress(c)
+        end
+        if not best and raidNeedsWork then
+            best = { unavailable = not showRaidPlan, text = showRaidPlan and "See Raid Goals for your next step"
+                or "Enable Raid Goals to see your next step" }
+        end
+        if bonusEnabled and not best then
+            if (combinedSlots or 0) >= 3 then
+                best = { text = "Selected weekly targets met", complete = true }
+            elseif bonusAction then
+                local minutes, gain, urgent = self:PlanEffort(bonusAction.id, c, bonusAction.remaining)
+                best = { minutes = minutes, gain = gain, urgent = urgent, id = bonusAction.id,
+                    text = string.format("Complete %d more %s for another Vault slot (%d/3 filled across all rows)",
+                    bonusAction.remaining, bonusAction.noun, combinedSlots or 0) }
+            else
+                best = { unavailable = true, text = string.format("%d/3 Vault slots filled; enable a Vault activity to get suggestions", combinedSlots or 0) }
+            end
+        end
         recs[#recs + 1] = {
+            key = key,
             name = c.name or key,
             classFile = c.classFile,
             ilvl = c.ilvl or 0,
             best = best,
+            goalLabel = goalLabel,
+            combinedSlots = combinedSlots,
+            bonusEnabled = bonusEnabled,
+            focus = focus,
+            eligibleCount = eligibleCount,
+            targetMet = targetMet,
             raidPlan = raidPlan,
-            isCurrent = Database and key == Database.charKey,
             needsCalibration = c.playedSeason ~= Constants.MIDNIGHT_SEASON_KEY,
-            engagement = ((c.seasonPlayed or 0) / 3600)
-                + Constants.GetActivityAffinity(c, "mplus") * 2
-                + Constants.GetActivityAffinity(c, "raid") * 2
-                + Constants.GetActivityAffinity(c, "delves")
-                + Constants.GetActivityAffinity(c, "professions") * 0.5,
         }
     end
-    -- Keep the plan in exactly the same order as the character columns above.
-    -- `charKeys` already puts the current character first and applies the
-    -- configured character sort to everyone else.
-
+    table.sort(recs, function(a, b)
+        local function status(r)
+            if r.needsCalibration then return 2 end
+            if r.best and not r.best.complete and not r.best.unavailable then return 1 end
+            if r.best and r.best.unavailable then return 3 end
+            if r.targetMet or (r.best and r.best.complete) or r.eligibleCount > 0 then return 4 end
+            return 3
+        end
+        if status(a) ~= status(b) then return status(a) < status(b) end
+        if status(a) == 1 then
+            if BetterAction(a.best, b.best) then return true end
+            if BetterAction(b.best, a.best) then return false end
+        end
+        return a.key < b.key
+    end)
+    -- Page the ranking independently; the status columns retain their order.
+    local firstRec, lastRec = 1, #recs
+    if persistent and pageCount > 1 then
+        firstRec = (self.page - 1) * (WINDOW_PAGE_SIZE - 1) + 1
+        lastRec = self.page == pageCount and #recs or math.min(#recs, firstRec + WINDOW_PAGE_SIZE - 2)
+    elseif maxCharacters and maxCharacters > 0 then
+        lastRec = math.min(#recs, maxCharacters)
+    end
     if showGamePlan and (showNextStep or showRaidPlan) then
-    tip:AddSeparator(2, 1, 1, 1, 0.6)
-    local recHdr = tip:AddLine()
-    tip:SetCell(recHdr, 1, Constants.COLOR_YELLOW .. "Weekly Game Plan" .. Constants.COLOR_RESET,
-        GameFontNormal, "LEFT", numCols)
-    tip:AddSeparator(1, 1, 1, 1, 0.25)
-    local planRaidCol = showNextStep and showRaidPlan
-        and (2 + math.ceil((numCols - 1) / 2)) or 2
-    local planActionSpan = showRaidPlan and (planRaidCol - 2) or (numCols - 1)
-    local planRaidSpan = numCols - planRaidCol + 1
-    local planLabels = tip:AddLine()
-    if showNextStep then
-        tip:SetCell(planLabels, 2, Constants.COLOR_GRAY .. "Next Step" .. Constants.COLOR_RESET,
-            nil, "LEFT", planActionSpan)
-    end
-    if showRaidPlan then
-        tip:SetCell(planLabels, planRaidCol, Constants.COLOR_GRAY .. "Raid Plan" .. Constants.COLOR_RESET,
-            nil, "LEFT", planRaidSpan)
-    end
-    tip:AddSeparator(1, 0.3, 0.3, 0.3, 0.35)
-    local calibrationCount = 0
-    local calibrationNames = {}
-    for _, r in ipairs(recs) do
-        if r.needsCalibration then
-            calibrationCount = calibrationCount + 1
-            calibrationNames[#calibrationNames + 1] = ClassColor(r.classFile)
-                .. r.name .. Constants.COLOR_RESET
+        local function addPlanHeader(title, r, g, b)
+            tip:AddSeparator(2, 1, 1, 1, 0.55)
+            local header = tip:AddLine()
+            tip:SetCell(header, 1, Constants.COLOR_YELLOW .. title .. Constants.COLOR_RESET,
+                GameFontNormal, "LEFT", numCols)
+            tip:SetLineColor(header, r, g, b, 0.72)
+            tip:AddSeparator(1, 1, 1, 1, 0.22)
         end
-    end
-    local calibratedCount = #recs - calibrationCount
-    if calibratedCount == 0 then
-        local warning = tip:AddLine()
-        tip:SetCell(warning, 1,
-            Constants.COLOR_YELLOW .. "I can't guide your warband yet." .. Constants.COLOR_RESET,
-            nil, "LEFT", numCols)
-        local loginLine = tip:AddLine()
-        tip:SetCell(loginLine, 1, Constants.COLOR_WHITE .. "Log into: " .. Constants.COLOR_RESET
-            .. table.concat(calibrationNames, ", "), nil, "LEFT", numCols)
-    else
-        if calibrationCount > 0 then
-            local hint = tip:AddLine()
-            tip:SetCell(hint, 1,
-                Constants.COLOR_GRAY .. "More paths unlock after you visit: " .. Constants.COLOR_RESET
-                    .. table.concat(calibrationNames, ", "), nil, "LEFT", numCols)
-            tip:AddSeparator(1, 0.3, 0.3, 0.3, 0.35)
-        end
-        local rankIndex = 0
-        for _, r in ipairs(recs) do
-          if not r.needsCalibration then
-            rankIndex = rankIndex + 1
+
+        local function addPlanRow(r, text, red, green, blue)
             local line = tip:AddLine()
-            local rank = Constants.COLOR_GRAY .. rankIndex .. ". " .. Constants.COLOR_RESET
-            tip:SetCell(line, 1, rank .. ClassColor(r.classFile) .. r.name .. Constants.COLOR_RESET)
-            local action = r.best
-                and (Constants.COLOR_WHITE .. r.best.text .. Constants.COLOR_RESET)
-                or Constants.CHECK_GREEN
-            local raidAction = r.raidPlan
-                and (Constants.COLOR_WHITE .. r.raidPlan .. Constants.COLOR_RESET)
-                or (Constants.COLOR_GRAY .. "\226\128\148" .. Constants.COLOR_RESET)
-            if showNextStep then
-                tip:SetCell(line, 2, action, nil, "LEFT", planActionSpan)
-            end
-            if showRaidPlan then
-                tip:SetCell(line, planRaidCol, raidAction, nil, "LEFT", planRaidSpan)
-            end
-          end
+            tip:SetCell(line, 1, ClassColor(r.classFile) .. r.name .. Constants.COLOR_RESET,
+                nil, "LEFT")
+            tip:SetCell(line, 2, text, nil, "LEFT", numCols - 1, nil,
+                8, 4, 720, 360)
+            SetCellVJust(line, 1, "TOP")
+            SetCellVJust(line, 2, "TOP")
+            tip:SetLineColor(line, red, green, blue, 0.5)
         end
-    end
+
+        if showNextStep then
+            addPlanHeader("Play Next", 0.04, 0.12, 0.20)
+            for index = firstRec, lastRec do
+                local r = recs[index]
+                local action
+                if r.needsCalibration then
+                    action = Constants.COLOR_GRAY .. "Log in to calibrate recommendations" .. Constants.COLOR_RESET
+                elseif r.best then
+                    action = Constants.COLOR_WHITE .. r.best.text .. Constants.COLOR_RESET
+                    if r.best.urgent then
+                        action = action .. Constants.COLOR_YELLOW .. " (time-sensitive)" .. Constants.COLOR_RESET
+                    elseif r.best.minutes then
+                        action = action .. Constants.COLOR_GRAY .. string.format(" (~%d min estimated)", r.best.minutes) .. Constants.COLOR_RESET
+                    elseif not r.best.complete and not r.best.unavailable then
+                        action = action .. Constants.COLOR_GRAY .. " (time estimate unavailable)" .. Constants.COLOR_RESET
+                    end
+                elseif r.targetMet then
+                    action = Constants.COLOR_GREEN .. "Weekly targets met (more Vault slots available)" .. Constants.COLOR_RESET
+                elseif r.eligibleCount > 0 then
+                    action = Constants.CHECK_GREEN .. " Eligible activities complete"
+                else
+                    action = Constants.COLOR_GRAY .. "No eligible recommendations" .. Constants.COLOR_RESET
+                end
+                if r.goalLabel then
+                    action = Constants.COLOR_YELLOW .. r.goalLabel .. Constants.COLOR_RESET .. ": " .. action
+                end
+                if r.bonusEnabled and (r.combinedSlots or 0) >= 3 then
+                    action = action .. Constants.COLOR_GREEN .. "; bonus-roll option unlocked for next Vault" .. Constants.COLOR_RESET
+                elseif r.bonusEnabled then
+                    action = action .. Constants.COLOR_GRAY .. string.format("; bonus-roll target: %d/3 slots", r.combinedSlots or 0) .. Constants.COLOR_RESET
+                end
+                addPlanRow(r, action, 0.025, 0.075, 0.12)
+            end
+        end
+
+        if showRaidPlan then
+            addPlanHeader("Raid Goals", 0.12, 0.055, 0.16)
+            local raidRows = 0
+            for index = firstRec, lastRec do
+                local r = recs[index]
+                if r.raidPlan then
+                    raidRows = raidRows + 1
+                    addPlanRow(r, Constants.COLOR_WHITE .. r.raidPlan .. Constants.COLOR_RESET,
+                        0.075, 0.035, 0.10)
+                end
+            end
+            if raidRows == 0 then
+                local line = tip:AddLine()
+                tip:SetCell(line, 1, Constants.COLOR_GRAY .. "No active raid goals" .. Constants.COLOR_RESET,
+                    nil, "LEFT", numCols)
+            end
+        end
     end
 
     -- The plan is the primary value of the addon, so show it before the detailed
     -- tracker grid. The grid remains the evidence behind each recommendation.
+    tip:AddSeparator(2, 1, 1, 1, 0.65)
+    local statusHdr = tip:AddLine()
+    tip:SetCell(statusHdr, 1, Constants.COLOR_YELLOW .. "Weekly Status" .. Constants.COLOR_RESET,
+        GameFontNormal, "LEFT", numCols)
+    tip:SetLineColor(statusHdr, 0.055, 0.055, 0.065, 0.72)
+    tip:AddSeparator(1, 1, 1, 1, 0.22)
+    local statusColumns = tip:AddLine()
+    tip:SetCell(statusColumns, 1, Constants.COLOR_GRAY .. "Task" .. Constants.COLOR_RESET)
+    for i, key in ipairs(charKeys) do
+        local c = db.chars[key]
+        local label = CharacterHeaderLabel(c, key)
+        if WeeklyReset:IsWeekStale(key) then
+            label = Constants.COLOR_GRAY .. label .. " (old)" .. Constants.COLOR_RESET
+        else
+            label = ClassColor(c.classFile) .. label .. Constants.COLOR_RESET
+        end
+        tip:SetCell(statusColumns, i + 1, label, GameFontNormal, "CENTER")
+    end
+
     -- Put the character roster's established endgame path first. This keeps the
     -- same grid for every alt while making the addon feel native to M+ players,
     -- raiders, or both instead of imposing one fixed activity hierarchy.
@@ -479,7 +611,8 @@ function Tooltip:Show(anchorFrame, persistent, maxCharacters)
         end)
     end
     for _, grp in ipairs(displayGroups) do
-        renderGroup(grp.label, byGroup[grp.id] or {})
+        local label = grp.id == "raidprogress" and ("Raid: " .. Constants.CURRENT_RAID_NAME) or grp.label
+        renderGroup(label, byGroup[grp.id] or {})
     end
     renderGroup("Other", ungrouped)
 

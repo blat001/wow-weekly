@@ -21,6 +21,10 @@ function TrackerRegistry:GetAll()
 end
 
 function TrackerRegistry:ScanAll()
+	local WeeklyReset = _G[ADDON_NAME .. "WeeklyReset"]
+	if WeeklyReset and WeeklyReset.CheckAndApplyWeeklyReset then
+		WeeklyReset:CheckAndApplyWeeklyReset()
+	end
 	local db = WoWWeekly.db
 	local Database = _G[ADDON_NAME .. "Database"]
 	local charState = Database:GetCharState()

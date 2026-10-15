@@ -55,8 +55,8 @@ function DelveTracker:Scan(charState)
 	local count = 0
 	local rawProgress = 0
 	local slots = {}
-	local ok, activities = pcall(C_WeeklyRewards.GetActivities,
-	                             Enum.WeeklyRewardChestThresholdType.World)
+	local ok, activities = pcall(function() return C_WeeklyRewards.GetActivities(
+	                             Enum.WeeklyRewardChestThresholdType.World) end)
 	-- GetActivities can briefly return an empty table while Weekly Rewards data is
 	-- still loading (notably just after login/zone changes).  An empty result is
 	-- not a valid zero-progress snapshot: replacing the saved slots here makes a
@@ -82,6 +82,29 @@ function DelveTracker:Scan(charState)
 		end
 		st.count = count                 -- Tier 8+ slots filled (0/2/4/8)
 		st.rawProgress = rawProgress      -- total runs of any tier (for reference)
+		-- The Vault UI uses this breakdown for actual completions at each tier.
+		-- Slot thresholds alone cannot distinguish two qualifying runs from three.
+		local getProgress = C_WeeklyRewards.GetSortedProgressForActivity
+		if getProgress then
+			local progressOK, progress = pcall(getProgress, Enum.WeeklyRewardChestThresholdType.World, true)
+			if progressOK and type(progress) == "table" and #progress > 0 then
+				local qualified = 0
+				for _, entry in ipairs(progress) do
+					if (entry.difficulty or 0) >= Constants.DELVE_MIN_TIER then
+						qualified = qualified + (entry.numPoints or 0)
+					end
+				end
+				st.qualifiedRuns = math.max(st.qualifiedRuns or 0, qualified, count)
+			end
+		end
+		-- A valid current-week total bounds qualifying runs. In particular, a
+		-- zero-progress response after reset must clear cached completion even
+		-- when the detailed breakdown is empty or still contains older data.
+		if rawProgress == 0 then
+			st.qualifiedRuns = 0
+		elseif st.qualifiedRuns ~= nil then
+			st.qualifiedRuns = math.min(rawProgress, math.max(st.qualifiedRuns, count))
+		end
 		st.slots = slots
 		st.lastUpdated = time()
 		if rawProgress > 0 then Constants.RecordActivity(charState, "delves") end
@@ -111,11 +134,50 @@ end
 
 function DelveTracker:IsComplete(charState)
 	local st = charState.trackers[self.id] or {}
-	local n = Constants.IsMidnightSeason2Active() and (st.count or 0) or (st.rawProgress or 0)
-	return n >= Constants.DELVE_HERO_THRESHOLD
+	local n = Constants.IsMidnightSeason2Active() and math.max(st.count or 0, st.qualifiedRuns or 0) or (st.rawProgress or 0)
+	return n >= Constants.DELVE_VAULT_MAX
+end
+
+function DelveTracker:IsGoalMet(charState)
+	local st = charState.trackers[self.id] or {}
+	local n = Constants.IsMidnightSeason2Active() and math.max(st.count or 0, st.qualifiedRuns or 0)
+		or (st.rawProgress or 0)
+	local Config = _G[ADDON_NAME .. "Config"]
+	local target = Config and Config.GetVaultGoalThreshold and Config:GetVaultGoalThreshold(charState, self.id)
+		or Constants.DELVE_HERO_THRESHOLD
+	return n >= target
+end
+
+function DelveTracker:GetLabyrinthAction(charState)
+	if not Constants.IsMidnightSeason2Active() then return nil end
+	-- Labyrinths were introduced in 12.1.5. Older clients keep ordinary Delves.
+	if GetBuildInfo then
+		local _, _, _, interface = GetBuildInfo()
+		if not interface or interface < 120105 then return nil end
+	end
+	local st = charState.trackers[self.id] or {}
+	if st.qualifiedRuns == nil then return nil end
+	local Config = _G[ADDON_NAME .. "Config"]
+	local target = Config and Config.GetVaultGoalThreshold and Config:GetVaultGoalThreshold(charState, self.id)
+		or Constants.DELVE_HERO_THRESHOLD
+	local progress = math.max(st.count or 0, st.qualifiedRuns or 0)
+	if target - progress < 3 then return nil end
+	if progress > 0 then
+		for _, threshold in ipairs({2, 4, 8}) do
+			if progress < threshold then
+				if threshold - progress < 3 then return nil end
+				break
+			end
+		end
+	end
+	-- The game awards one World activity per three chambers, not three Vault
+	-- reward slots. Keep all recorded progress sourced from Weekly Rewards.
+	return "Complete all 9 chambers of a Tier 8+ Labyrinth for 3 World Vault credits"
 end
 
 function DelveTracker:GetAction(charState)
+	local labyrinth = self:GetLabyrinthAction(charState)
+	if labyrinth then return labyrinth end
 	local st = charState.trackers[self.id] or {}
 	local gilded = charState.trackers[Constants.TRACKER_GILDEDSTASH] or {}
 	local Config = _G[ADDON_NAME .. "Config"]
@@ -123,14 +185,18 @@ function DelveTracker:GetAction(charState)
 	local needsGilded = gilded.max ~= nil and gilded.max > 0
 		and (gilded.looted or 0) < gilded.max and maxTier >= 11
 	if Constants.IsMidnightSeason2Active() and needsGilded then
-		return "Complete a Tier 11 Bountiful Delve for Gilded Stash and Hero Vault progress"
+		return "Complete a Tier 11 Bountiful Delve"
 	end
-	local progress = Constants.IsMidnightSeason2Active() and (st.count or 0) or (st.rawProgress or 0)
+	local active = Constants.IsMidnightSeason2Active()
+	local progress = active and math.max(st.count or 0, st.qualifiedRuns or 0) or (st.rawProgress or 0)
 	local nextThreshold
 	for _, threshold in ipairs({ 2, 4, 8 }) do
 		if progress < threshold then nextThreshold = threshold break end
 	end
 	if not nextThreshold then return "Delve Great Vault complete" end
+	if active and st.qualifiedRuns == nil then
+		return "Complete Tier 8 Delves toward the next Hero Vault slot (run count unavailable)"
+	end
 	local remaining = nextThreshold - progress
 	local noun = remaining == 1 and "Delve" or "Delves"
 	local tier = Constants.IsMidnightSeason2Active() and "Tier 8 " or ""
