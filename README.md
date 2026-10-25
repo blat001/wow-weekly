@@ -50,7 +50,7 @@ WoW Weekly Tracker shows the weekly tasks you actually care about across your ma
 
 ## What it tracks
 
-- **Delves**: Bounty Map (Not Looted / In Bags / Used), Coffer Keys, Coffer Key Shards, and the weekly Gilded Stash (up to 4)
+- **Delves**: Bounty Map (Not Looted / In Bags / Used), Coffer Keys, Coffer Key Shards, weekly Gilded Stash (up to 4), and Mythical Soul Fragment (earned / available so far)
 - **Coiled Isle**: weekly completion progress
 - **Weekly Quest**: the rotating weekly meta objective and the Timewalking event weekly
 - **Prey**: Normal, Hard and Nightmare progress
@@ -62,6 +62,15 @@ row includes all qualifying raid and lair kills. Its labels (such as `[Hero]`)
 describe the reward's gear upgrade track, not the difficulty you completed.
 
 ## How to use
+
+**Soul Fragment** counts completed quests in Wah'du's Labyrinth chain against
+the number unlocked so far: 2/2 when caught up in week two, then 2/3 after the
+next regional reset until you finish the next quest. It includes quests completed
+before this addon update and counts earned fragments even after spending them.
+Green means caught up, yellow means partly complete, and red means none earned.
+The total caps at 6. Verified quest IDs cover the first four weeks; the remaining
+steps are loaded from the game's full quest-chain data. Missing quest data shows
+?/total; unavailable reset timing shows Unknown.
 
 1. Install and log in.
 2. Click the minimap button (or the Titan Panel plugin) to open the grid.

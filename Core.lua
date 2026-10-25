@@ -411,6 +411,8 @@ end
 function WoWWeekly:RegisterEvents()
 	self:RegisterEvent("PLAYER_LOGIN", "OnPlayerLogin")
 	self:RegisterEvent("PLAYER_LOGOUT", "OnPlayerLogout")
+	self:RegisterEvent("QUEST_TURNED_IN", "OnSoulFragmentUpdate")
+	self:RegisterEvent("QUEST_LOG_UPDATE", "OnSoulFragmentUpdate")
 	self:RegisterEvent("TIME_PLAYED_MSG", "OnTimePlayed")
 	self:RegisterEvent("WEEKLY_REWARDS_UPDATE", "OnWeeklyRewardsUpdate")
 	self:RegisterEvent("UPDATE_INSTANCE_INFO", "OnRaidInfoUpdate")
@@ -418,6 +420,17 @@ function WoWWeekly:RegisterEvents()
 	self:RegisterEvent("PLAYER_ENTERING_WORLD", "RequestRaidRefresh")
 	self:RegisterEvent("CALENDAR_UPDATE_EVENT_LIST", "OnCalendarUpdate")
 	self:RegisterEvent("CALENDAR_UPDATE_PENDING_INVITES", "OnCalendarUpdate")
+end
+
+function WoWWeekly:OnSoulFragmentUpdate(event, questID)
+	CheckWeeklyReset()
+	local database = _G[ADDON_NAME .. "Database"]
+	local tracker = _G[ADDON_NAME .. "SoulFragmentTracker"]
+	local charState = database and database:GetCharState()
+	if tracker and charState then
+		tracker:Scan(charState)
+		if event == "QUEST_TURNED_IN" then tracker:OnQuestTurnedIn(charState, questID) end
+	end
 end
 
 function WoWWeekly:RequestRaidRefresh()

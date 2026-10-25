@@ -1,3 +1,7 @@
+# v1.5.1
+
+- Added Soul Fragment under Delves, showing completed Labyrinth fragment quests / total unlocked so far (for example, 2/2 becoming 2/3 at reset), including rewards earned before installing the update.
+
 # v1.5.0
 
 - Updated for WoW 12.1.5.

@@ -1,5 +1,5 @@
 local ADDON_NAME = "WoWWeekly"
-local ADDON_VERSION = "1.5.0"
+local ADDON_VERSION = "1.5.1"
 
 local Constants = {
 	ADDON_NAME = ADDON_NAME,
@@ -11,6 +11,7 @@ local Constants = {
 	TRACKER_COFFERKEYS = "cofferkeys",
 	TRACKER_COFFERKEYSHARDS = "cofferkeyshards",
 	TRACKER_GILDEDSTASH = "gildedstash",
+	TRACKER_SOULFRAGMENT = "soulfragment",
 	TRACKER_PROFESSION1 = "profession1",
 	TRACKER_PROFESSION1_TREATISE = "profession1treatise",
 	TRACKER_PROFESSION2 = "profession2",
